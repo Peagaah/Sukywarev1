@@ -2,7 +2,7 @@
 --// Adicione ou remova keys facilmente na tabela abaixo
 
 local ValidKeys = {
-    "Teste123",
+    "Amoomatheus",
     "SukyKey2026",
     "SukyV2VIP",
     -- Adicione mais keys aqui entre aspas, separadas por vírgula:
