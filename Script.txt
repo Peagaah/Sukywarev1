@@ -1,228 +1,2544 @@
---// SukyWare V2 - Key System UI (Limpo e Otimizado)
-local ValidKeys = {
-    "Teste123",
-    "SukyKey2026",
-    "SukyV2VIP",
-    "Novakey",
-    -- Adicione mais keys aqui entre aspas, separadas por vírgula:
-    -- "sua_nova_key_aqui",
+--[[
+	SukyWare (VERSÃO DE TESTE, UM SCRIPT SÓ)
+
+	Coloque como LocalScript em StarterPlayerScripts. Não precisa de servidor.
+	Speed e Soru são aplicados direto pelo cliente (só para testar no Studio).
+	Para o sorteio de verdade, use a versão com AdminServer (mais segura).
+	RightShift = mostrar/esconder (muda na aba Settings)
+
+	Componentes disponíveis (use em qualquer coluna):
+	  UI.section(col, texto)
+	  UI.toggle(col, texto, padrao, callback, dica)
+	  UI.slider(col, texto, min, max, padrao, passo, callback)
+	  UI.input(col, texto, padrao, callback)
+	  UI.dropdown(col, texto, opcoes, padrao, callback)
+	  UI.keybind(col, texto, tecla, callback)
+	  UI.button(col, texto, callback)
+	  UI.playerList(col, callback)
+	  UI.colors(col, texto, cores, callback)
+]]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+----------------------------------------------------------------------
+-- TEMA
+----------------------------------------------------------------------
+local THEME = {
+	window = Color3.fromRGB(10, 10, 12),
+	header = Color3.fromRGB(16, 16, 18),
+	row = Color3.fromRGB(26, 26, 30),
+	input = Color3.fromRGB(18, 18, 21),
+	off = Color3.fromRGB(52, 52, 58),
+	line = Color3.fromRGB(36, 36, 42),
+	text = Color3.fromRGB(255, 255, 255),
+	muted = Color3.fromRGB(150, 150, 158),
+}
+local DEFAULT_ACCENT = Color3.fromRGB(56, 132, 255)
+local ACCENT = DEFAULT_ACCENT
+local toggleKey = Enum.KeyCode.RightShift
+local notificationsEnabled = true
+
+-- Logo da bolinha: suba a imagem no Roblox e cole o ID aqui.
+-- Exemplo: "rbxassetid://1234567890"  (enquanto for "", a bolinha mostra o texto "SW")
+local LOGO_IMAGE = "rbxassetid://133287695758905"
+
+-- MODO DE TESTE
+--   true  = qualquer jogador usa tudo (bom para testar no Studio)
+--   false = só os UserIds da tabela ADMINS abaixo
+local TEST_MODE = true
+
+local ALL = { "Aimbot", "Speed", "Jump", "Soru", "Glide", "Fly", "ESP", "Combat", "Macro" }
+local ADMINS = {
+	[1111111111] = ALL,
+	[2222222222] = ALL,
 }
 
-local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
-local Player = Players.LocalPlayer
-local PlayerGui = Player:FindFirstChild("PlayerGui") or CoreGui
-
--- Evita duplicatas se já houver uma UI aberta
-if PlayerGui:FindFirstChild("SukyWareKeySystem") then
-    PlayerGui.SukyWareKeySystem:Destroy()
+local PERMS = {}
+do
+	local list = TEST_MODE and ALL or ADMINS[player.UserId]
+	if not list then
+		return
+	end
+	for _, name in ipairs(list) do
+		PERMS[name] = true
+	end
+end
+local function hasPerm(perm)
+	return PERMS[perm] == true
 end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SukyWareKeySystem"
-ScreenGui.Parent = PlayerGui
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
--- Janela Principal (Main Frame)
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -135)
-MainFrame.Size = UDim2.new(0, 400, 0, 265)
-MainFrame.Active = true
-MainFrame.Draggable = true
-
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 12)
-MainCorner.Parent = MainFrame
-
--- Linha fina branca nas bordas (UIStroke)
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Color3.fromRGB(255, 255, 255)
-MainStroke.Transparency = 0.7
-MainStroke.Thickness = 1.2
-MainStroke.Parent = MainFrame
-
--- TopBar / Cabeçalho
-local TopBar = Instance.new("Frame")
-TopBar.Name = "TopBar"
-TopBar.Parent = MainFrame
-TopBar.BackgroundTransparency = 1
-TopBar.Size = UDim2.new(1, 0, 0, 45)
-
-local LogoLabel = Instance.new("TextLabel")
-LogoLabel.Name = "LogoLabel"
-LogoLabel.Parent = TopBar
-LogoLabel.BackgroundTransparency = 1
-LogoLabel.Position = UDim2.new(0, 15, 0, 0)
-LogoLabel.Size = UDim2.new(0, 200, 1, 0)
-LogoLabel.Font = Enum.Font.GothamBold
-LogoLabel.Text = "S  KEY SYSTEM"
-LogoLabel.TextColor3 = Color3.fromRGB(0, 136, 255) -- Azul
-LogoLabel.TextSize = 14
-LogoLabel.TextXAlignment = Enum.TextXAlignment.Left
-
--- Botão de Fechar
-local CloseButton = Instance.new("TextButton")
-CloseButton.Name = "CloseButton"
-CloseButton.Parent = TopBar
-CloseButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-CloseButton.Position = UDim2.new(1, -35, 0.5, -12)
-CloseButton.Size = UDim2.new(0, 24, 0, 24)
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.Text = "×"
-CloseButton.TextColor3 = Color3.fromRGB(220, 220, 220)
-CloseButton.TextSize = 16
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 6)
-CloseCorner.Parent = CloseButton
-
-local CloseStroke = Instance.new("UIStroke")
-CloseStroke.Color = Color3.fromRGB(255, 255, 255)
-CloseStroke.Transparency = 0.8
-CloseStroke.Thickness = 1
-CloseStroke.Parent = CloseButton
-
-CloseButton.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
-
--- Textos de Boas-Vindas
-local WelcomeTitle = Instance.new("TextLabel")
-WelcomeTitle.Name = "WelcomeTitle"
-WelcomeTitle.Parent = MainFrame
-WelcomeTitle.BackgroundTransparency = 1
-WelcomeTitle.Position = UDim2.new(0, 20, 0, 45)
-WelcomeTitle.Size = UDim2.new(1, -40, 0, 22)
-WelcomeTitle.Font = Enum.Font.GothamMedium
-WelcomeTitle.Text = "Welcome to the,"
-WelcomeTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
-WelcomeTitle.TextSize = 15
-WelcomeTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-local HubTitle = Instance.new("TextLabel")
-HubTitle.Name = "HubTitle"
-HubTitle.Parent = MainFrame
-HubTitle.BackgroundTransparency = 1
-HubTitle.Position = UDim2.new(0, 20, 0, 67)
-HubTitle.Size = UDim2.new(1, -40, 0, 30)
-HubTitle.Font = Enum.Font.GothamBold
-HubTitle.Text = "SukyWare V2"
-HubTitle.TextColor3 = Color3.fromRGB(0, 140, 255) -- Azul
-HubTitle.TextSize = 22
-HubTitle.TextXAlignment = Enum.TextXAlignment.Left
-
--- Label "Key"
-local KeyLabel = Instance.new("TextLabel")
-KeyLabel.Name = "KeyLabel"
-KeyLabel.Parent = MainFrame
-KeyLabel.BackgroundTransparency = 1
-KeyLabel.Position = UDim2.new(0, 20, 0, 105)
-KeyLabel.Size = UDim2.new(1, -40, 0, 15)
-KeyLabel.Font = Enum.Font.Gotham
-KeyLabel.Text = "Key"
-KeyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-KeyLabel.TextSize = 12
-KeyLabel.TextXAlignment = Enum.TextXAlignment.Left
-
--- Caixa de Texto (TextBox) para inserir a Key
-local KeyBox = Instance.new("TextBox")
-KeyBox.Name = "KeyBox"
-KeyBox.Parent = MainFrame
-KeyBox.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-KeyBox.Position = UDim2.new(0, 20, 0, 123)
-KeyBox.Size = UDim2.new(1, -40, 0, 40)
-KeyBox.Font = Enum.Font.Gotham
-KeyBox.PlaceholderText = "insert your key here"
-KeyBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
-KeyBox.Text = ""
-KeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-KeyBox.TextSize = 13
-
-local BoxCorner = Instance.new("UICorner")
-BoxCorner.CornerRadius = UDim.new(0, 8)
-BoxCorner.Parent = KeyBox
-
-local BoxStroke = Instance.new("UIStroke")
-BoxStroke.Color = Color3.fromRGB(0, 136, 255)
-BoxStroke.Transparency = 0.5
-BoxStroke.Thickness = 1
-BoxStroke.Parent = KeyBox
-
--- Botão de Submeter Key
-local SubmitButton = Instance.new("TextButton")
-SubmitButton.Name = "SubmitButton"
-SubmitButton.Parent = MainFrame
-SubmitButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255) -- Azul vibrante
-SubmitButton.Position = UDim2.new(0, 20, 0, 175)
-SubmitButton.Size = UDim2.new(1, -40, 0, 38)
-SubmitButton.Font = Enum.Font.GothamBold
-SubmitButton.Text = "Submit Key >"
-SubmitButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SubmitButton.TextSize = 14
-
-local SubmitCorner = Instance.new("UICorner")
-SubmitCorner.CornerRadius = UDim.new(0, 8)
-SubmitCorner.Parent = SubmitButton
-
--- Rodapé com o Link do Discord
-local SupportLabel = Instance.new("TextButton")
-SupportLabel.Name = "SupportLabel"
-SupportLabel.Parent = MainFrame
-SupportLabel.BackgroundTransparency = 1
-SupportLabel.Position = UDim2.new(0, 20, 0, 225)
-SupportLabel.Size = UDim2.new(1, -40, 0, 20)
-SupportLabel.Font = Enum.Font.Gotham
-SupportLabel.Text = "Need support? Join the Discord"
-SupportLabel.TextColor3 = Color3.fromRGB(150, 150, 160)
-SupportLabel.TextSize = 12
-
--- Copiar link do Discord ao clicar
-SupportLabel.MouseButton1Click:Connect(function()
-    setclipboard("https://discord.gg/8BSHpVSyCN")
-    SupportLabel.Text = "Link copiado para a área de transferência!"
-    task.wait(2)
-    SupportLabel.Text = "Need support? Join the Discord"
-end)
-
--- Função para verificar se a key digitada existe na tabela
-local function isKeyValid(input)
-    for _, key in ipairs(ValidKeys) do
-        if key == input then
-            return true
-        end
-    end
-    return false
+----------------------------------------------------------------------
+-- HELPERS
+----------------------------------------------------------------------
+local function new(class, props, parent)
+	local inst = Instance.new(class)
+	for k, v in pairs(props) do
+		inst[k] = v
+	end
+	inst.Parent = parent
+	return inst
 end
 
--- Validação e execução
-SubmitButton.MouseButton1Click:Connect(function()
-    local enteredKey = KeyBox.Text
-    
-    if isKeyValid(enteredKey) then
-        SubmitButton.Text = "Key Correta! Carregando..."
-        SubmitButton.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-        task.wait(1)
-        
-        -- Fecha a UI de Key
-        ScreenGui:Destroy()
-        
-        -- Executa o seu script do GitHub com segurança
-        local success, err = pcall(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/Peagaah/SukyWare/refs/heads/main/Script.txt"))()
-        end)
-        
-        if not success then
-            warn("Erro ao carregar o script do GitHub: " .. tostring(err))
-        end
-        
-    else
-        SubmitButton.Text = "Key Incorreta!"
-        SubmitButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-        task.wait(1.5)
-        SubmitButton.Text = "Submit Key >"
-        SubmitButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    end
+local function corner(inst, radius)
+	return new("UICorner", { CornerRadius = UDim.new(0, radius) }, inst)
+end
+
+local function stroke(inst, color, thickness)
+	return new("UIStroke", {
+		Color = color or THEME.line,
+		Thickness = thickness or 1,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, inst)
+end
+
+local function tween(inst, time, props)
+	TweenService:Create(inst, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function isPointer(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local orderCounter = 0
+local function nextOrder()
+	orderCounter += 1
+	return orderCounter
+end
+
+-- Tudo que usa a cor de destaque se registra aqui para mudar ao vivo
+local accentBinds = {}
+local function bindAccent(inst, prop)
+	table.insert(accentBinds, { inst = inst, prop = prop })
+	inst[prop] = ACCENT
+end
+
+local function setAccent(color)
+	ACCENT = color
+	for i = #accentBinds, 1, -1 do
+		local b = accentBinds[i]
+		if not b.inst:IsDescendantOf(game) then
+			table.remove(accentBinds, i)
+		else
+			tween(b.inst, 0.25, { [b.prop] = color })
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- JANELA
+----------------------------------------------------------------------
+local gui = new("ScreenGui", {
+	Name = "SukyWare",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	DisplayOrder = 100,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, player:WaitForChild("PlayerGui"))
+
+local window = new("Frame", {
+	Size = UDim2.fromOffset(660, 410),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	BackgroundColor3 = THEME.window,
+	BorderSizePixel = 0,
+}, gui)
+corner(window, 12)
+stroke(window, THEME.line, 1)
+local uiScale = new("UIScale", { Scale = 1 }, window)
+
+-- Cabeçalho
+local header = new("Frame", {
+	Size = UDim2.new(1, 0, 0, 46),
+	BackgroundColor3 = THEME.header,
+	BorderSizePixel = 0,
+}, window)
+corner(header, 12)
+new("Frame", {
+	Size = UDim2.new(1, 0, 0, 12),
+	Position = UDim2.new(0, 0, 1, -12),
+	BackgroundColor3 = THEME.header,
+	BorderSizePixel = 0,
+}, header)
+
+local dragHandle = new("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	ZIndex = 2,
+}, header)
+
+local title = new("TextLabel", {
+	Size = UDim2.fromOffset(130, 46),
+	Position = UDim2.fromOffset(16, 0),
+	BackgroundTransparency = 1,
+	Text = "SukyWare",
+	Font = Enum.Font.GothamBold,
+	TextSize = 18,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 3,
+}, header)
+title.TextColor3 = Color3.new(1, 1, 1)
+
+local closeButton = new("TextButton", {
+	Size = UDim2.fromOffset(30, 30),
+	Position = UDim2.new(1, -40, 0.5, -15),
+	BackgroundTransparency = 1,
+	Text = "X",
+	Font = Enum.Font.GothamBold,
+	TextSize = 16,
+	ZIndex = 4,
+}, header)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+
+local tabBar = new("Frame", {
+	Size = UDim2.new(1, -200, 1, 0),
+	Position = UDim2.fromOffset(150, 0),
+	BackgroundTransparency = 1,
+	ZIndex = 3,
+}, header)
+new("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	Padding = UDim.new(0, 2),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	VerticalAlignment = Enum.VerticalAlignment.Center,
+}, tabBar)
+
+local underline = new("Frame", {
+	Size = UDim2.fromOffset(0, 2),
+	Position = UDim2.new(0, 0, 1, -3),
+	BorderSizePixel = 0,
+	ZIndex = 4,
+}, header)
+corner(underline, 1)
+underline.BackgroundColor3 = Color3.new(1, 1, 1)
+
+new("Frame", {
+	Size = UDim2.new(1, 0, 0, 1),
+	Position = UDim2.fromOffset(0, 46),
+	BackgroundColor3 = THEME.line,
+	BorderSizePixel = 0,
+}, window)
+
+local body = new("Frame", {
+	Size = UDim2.new(1, 0, 1, -47),
+	Position = UDim2.fromOffset(0, 47),
+	BackgroundTransparency = 1,
+}, window)
+
+-- Arrastar pelo cabeçalho
+do
+	local dragging, dragStart, startPos
+	dragHandle.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging = true
+			dragStart = input.Position
+			startPos = window.Position
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			window.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + d.X,
+				startPos.Y.Scale, startPos.Y.Offset + d.Y
+			)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if isPointer(input) then
+			dragging = false
+		end
+	end)
+end
+
+----------------------------------------------------------------------
+-- NOTIFICAÇÕES
+----------------------------------------------------------------------
+local toastHolder = new("Frame", {
+	Size = UDim2.fromOffset(260, 300),
+	Position = UDim2.new(1, -276, 1, -316),
+	BackgroundTransparency = 1,
+	ZIndex = 200,
+}, gui)
+new("UIListLayout", {
+	Padding = UDim.new(0, 6),
+	VerticalAlignment = Enum.VerticalAlignment.Bottom,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, toastHolder)
+
+local function notify(text)
+	if not notificationsEnabled then
+		return
+	end
+	local toast = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 36),
+		BackgroundColor3 = THEME.header,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, toastHolder)
+	corner(toast, 8)
+	local st = stroke(toast, THEME.line, 1)
+	st.Transparency = 1
+	local label = new("TextLabel", {
+		Size = UDim2.new(1, -16, 1, 0),
+		Position = UDim2.fromOffset(8, 0),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = THEME.text,
+		TextTransparency = 1,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+	}, toast)
+	tween(toast, 0.2, { BackgroundTransparency = 0 })
+	tween(st, 0.2, { Transparency = 0 })
+	tween(label, 0.2, { TextTransparency = 0 })
+	task.delay(2.5, function()
+		tween(toast, 0.3, { BackgroundTransparency = 1 })
+		tween(st, 0.3, { Transparency = 1 })
+		tween(label, 0.3, { TextTransparency = 1 })
+		task.wait(0.35)
+		toast:Destroy()
+	end)
+end
+
+----------------------------------------------------------------------
+-- ABAS
+----------------------------------------------------------------------
+local tabs = {}
+
+local function selectTab(name)
+	for tabName, t in pairs(tabs) do
+		local active = (tabName == name)
+		t.page.Visible = active
+		tween(t.button, 0.15, { TextColor3 = active and THEME.text or THEME.muted })
+		if active then
+			local x = (t.button.AbsolutePosition.X - header.AbsolutePosition.X) / uiScale.Scale
+			local w = t.button.AbsoluteSize.X / uiScale.Scale
+			tween(underline, 0.2, { Position = UDim2.new(0, x + 10, 1, -3), Size = UDim2.fromOffset(math.max(w - 20, 4), 2) })
+		end
+	end
+end
+
+local function createColumn(parent, position, size)
+	local col = new("ScrollingFrame", {
+		Size = size,
+		Position = position,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = THEME.off,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, parent)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 12),
+		PaddingLeft = UDim.new(0, 16),
+		PaddingRight = UDim.new(0, 16),
+	}, col)
+	new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, col)
+	return col
+end
+
+local tabCount = 0
+local function createTab(name)
+	tabCount += 1
+	local button = new("TextButton", {
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Text = name,
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		AutoButtonColor = false,
+		LayoutOrder = tabCount,
+		ZIndex = 4,
+	}, tabBar)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, button)
+
+	local page = new("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+	}, body)
+	new("Frame", {
+		Size = UDim2.new(0, 1, 1, -20),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		BackgroundColor3 = THEME.line,
+		BorderSizePixel = 0,
+	}, page)
+
+	local left = createColumn(page, UDim2.fromScale(0, 0), UDim2.fromScale(0.5, 1))
+	local right = createColumn(page, UDim2.fromScale(0.5, 0), UDim2.fromScale(0.5, 1))
+
+	tabs[name] = { button = button, page = page }
+	button.MouseButton1Click:Connect(function()
+		selectTab(name)
+	end)
+	return left, right
+end
+
+----------------------------------------------------------------------
+-- COMPONENTES
+----------------------------------------------------------------------
+local UI = {}
+
+local function rowLabel(parent, text, width)
+	return new("TextLabel", {
+		Size = UDim2.new(1, -(width or 0), 1, 0),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}, parent)
+end
+
+function UI.section(col, text)
+	local f = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, f)
+	new("Frame", {
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.new(0, 0, 1, -2),
+		BackgroundColor3 = THEME.line,
+		BorderSizePixel = 0,
+	}, f)
+end
+
+function UI.toggle(col, text, default, callback, hint, perm)
+	local on = default or false
+	local row = new("TextButton", {
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		LayoutOrder = nextOrder(),
+	}, col)
+
+	local ring = new("Frame", {
+		Size = UDim2.fromOffset(20, 20),
+		Position = UDim2.new(0, 0, 0.5, -10),
+		BackgroundColor3 = THEME.input,
+		BorderSizePixel = 0,
+	}, row)
+	corner(ring, 10)
+	stroke(ring, THEME.off, 1.5)
+
+	local dot = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = on and UDim2.fromOffset(12, 12) or UDim2.fromOffset(0, 0),
+		BorderSizePixel = 0,
+	}, ring)
+	corner(dot, 6)
+	bindAccent(dot, "BackgroundColor3")
+
+	local label = rowLabel(row, text, 30)
+	label.Position = UDim2.fromOffset(30, 0)
+	label.Size = UDim2.new(1, -90, 1, 0)
+
+	if hint then
+		new("TextLabel", {
+			Size = UDim2.new(0, 60, 1, 0),
+			Position = UDim2.new(1, -60, 0, 0),
+			BackgroundTransparency = 1,
+			Text = hint,
+			TextColor3 = THEME.muted,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		}, row)
+	end
+
+	local function set(value, silent)
+		if value and perm and not hasPerm(perm) and not silent then
+			notify("Sem permissão: " .. text)
+			return
+		end
+		on = value
+		tween(dot, 0.15, { Size = on and UDim2.fromOffset(12, 12) or UDim2.fromOffset(0, 0) })
+		if callback and not silent then
+			task.spawn(callback, on)
+		end
+	end
+	row.MouseButton1Click:Connect(function()
+		set(not on)
+	end)
+	return { Set = set, Get = function() return on end }
+end
+
+function UI.slider(col, text, min, max, default, step, callback)
+	step = step or 1
+	local value = default or min
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 44),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+
+	local label = rowLabel(row, text, 70)
+	label.Size = UDim2.new(1, -70, 0, 22)
+
+	local valueLabel = new("TextLabel", {
+		Size = UDim2.fromOffset(70, 22),
+		Position = UDim2.new(1, -70, 0, 0),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, row)
+	valueLabel.TextColor3 = Color3.new(1, 1, 1)
+
+	local hit = new("TextButton", {
+		Size = UDim2.new(1, 0, 0, 20),
+		Position = UDim2.fromOffset(0, 24),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+	}, row)
+	local track = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 6),
+		Position = UDim2.new(0, 0, 0.5, -3),
+		BackgroundColor3 = THEME.off,
+		BorderSizePixel = 0,
+	}, hit)
+	corner(track, 3)
+	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0 }, track)
+	corner(fill, 3)
+	bindAccent(fill, "BackgroundColor3")
+	local knob = new("Frame", {
+		Size = UDim2.fromOffset(12, 12),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+	}, track)
+	corner(knob, 6)
+
+	local function render()
+		local rel = (value - min) / (max - min)
+		fill.Size = UDim2.fromScale(rel, 1)
+		knob.Position = UDim2.fromScale(rel, 0.5)
+		valueLabel.Text = string.format("%g", value)
+	end
+
+	local function apply(newValue, silent)
+		newValue = math.clamp(newValue, min, max)
+		if newValue ~= value then
+			value = newValue
+			render()
+			if callback and not silent then
+				task.spawn(callback, value)
+			end
+		end
+	end
+
+	local function setFromX(x)
+		local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		apply(math.floor((min + (max - min) * rel) / step + 0.5) * step)
+	end
+
+	local dragging = false
+	hit.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging = true
+			setFromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			setFromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if isPointer(input) then
+			dragging = false
+		end
+	end)
+
+	render()
+	return { Set = apply, Get = function() return value end }
+end
+
+function UI.input(col, text, default, callback)
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, 160)
+	local box = new("TextBox", {
+		Size = UDim2.fromOffset(150, 26),
+		Position = UDim2.new(1, -150, 0.5, -13),
+		BackgroundColor3 = THEME.input,
+		Text = tostring(default or ""),
+		TextColor3 = THEME.text,
+		PlaceholderColor3 = THEME.muted,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		ClearTextOnFocus = false,
+	}, row)
+	corner(box, 6)
+	local st = stroke(box, THEME.line, 1)
+	box.Focused:Connect(function()
+		tween(st, 0.15, { Color = ACCENT })
+	end)
+	box.FocusLost:Connect(function()
+		tween(st, 0.15, { Color = THEME.line })
+		if callback then
+			task.spawn(callback, box.Text)
+		end
+	end)
+	return { Get = function() return box.Text end, Set = function(v) box.Text = tostring(v) end }
+end
+
+-- Dropdown (a lista fica no nível do ScreenGui para não ser cortada pela coluna)
+local openList
+local catcher = new("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	Visible = false,
+	ZIndex = 99,
+}, gui)
+
+local function closeDropdown()
+	if openList then
+		openList:Destroy()
+		openList = nil
+	end
+	catcher.Visible = false
+end
+catcher.MouseButton1Click:Connect(closeDropdown)
+
+function UI.dropdown(col, text, options, default, callback)
+	local current = default or options[1]
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, 160)
+	local box = new("TextButton", {
+		Size = UDim2.fromOffset(150, 26),
+		Position = UDim2.new(1, -150, 0.5, -13),
+		BackgroundColor3 = THEME.input,
+		Text = current,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		AutoButtonColor = false,
+	}, row)
+	corner(box, 6)
+	stroke(box, THEME.line, 1)
+	new("TextLabel", {
+		Size = UDim2.fromOffset(20, 26),
+		Position = UDim2.new(1, -22, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "v",
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+	}, box)
+
+	box.MouseButton1Click:Connect(function()
+		closeDropdown()
+		local s = uiScale.Scale
+		local itemH = 26 * s
+		local list = new("Frame", {
+			Size = UDim2.fromOffset(box.AbsoluteSize.X, itemH * #options + 4 * s),
+			Position = UDim2.fromOffset(box.AbsolutePosition.X, box.AbsolutePosition.Y + box.AbsoluteSize.Y + 2),
+			BackgroundColor3 = THEME.header,
+			BorderSizePixel = 0,
+			ZIndex = 100,
+		}, gui)
+		corner(list, 6)
+		stroke(list, THEME.line, 1)
+		for i, option in ipairs(options) do
+			local item = new("TextButton", {
+				Size = UDim2.new(1, 0, 0, itemH),
+				Position = UDim2.fromOffset(0, 2 * s + (i - 1) * itemH),
+				BackgroundTransparency = 1,
+				Text = option,
+				TextColor3 = option == current and THEME.text or THEME.muted,
+				Font = option == current and Enum.Font.GothamBold or Enum.Font.Gotham,
+				TextSize = math.floor(13 * s),
+				AutoButtonColor = false,
+				ZIndex = 101,
+			}, list)
+			item.MouseEnter:Connect(function()
+				item.TextColor3 = THEME.text
+			end)
+			item.MouseLeave:Connect(function()
+				item.TextColor3 = option == current and THEME.text or THEME.muted
+			end)
+			item.MouseButton1Click:Connect(function()
+				current = option
+				box.Text = option
+				closeDropdown()
+				if callback then
+					task.spawn(callback, option)
+				end
+			end)
+		end
+		openList = list
+		catcher.Visible = true
+	end)
+	return {
+		Get = function() return current end,
+		Set = function(v)
+			current = v
+			box.Text = v
+		end,
+	}
+end
+
+function UI.keybind(col, text, defaultKey, callback)
+	local key = defaultKey
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, 100)
+	local box = new("TextButton", {
+		Size = UDim2.fromOffset(90, 26),
+		Position = UDim2.new(1, -90, 0.5, -13),
+		BackgroundColor3 = THEME.input,
+		Text = key.Name,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		AutoButtonColor = false,
+	}, row)
+	corner(box, 6)
+	local st = stroke(box, THEME.line, 1)
+
+	box.MouseButton1Click:Connect(function()
+		box.Text = "..."
+		tween(st, 0.15, { Color = ACCENT })
+		local conn
+		conn = UserInputService.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Keyboard then
+				conn:Disconnect()
+				if input.KeyCode ~= Enum.KeyCode.Escape then
+					key = input.KeyCode
+					if callback then
+						task.spawn(callback, key)
+					end
+				end
+				box.Text = key.Name
+				tween(st, 0.15, { Color = THEME.line })
+			end
+		end)
+	end)
+	return {
+		Get = function() return key end,
+		Set = function(k)
+			key = k
+			box.Text = k.Name
+		end,
+	}
+end
+
+function UI.button(col, text, callback)
+	local b = new("TextButton", {
+		Size = UDim2.new(1, 0, 0, 32),
+		BackgroundColor3 = THEME.input,
+		Text = text,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		AutoButtonColor = false,
+		LayoutOrder = nextOrder(),
+	}, col)
+	corner(b, 6)
+	stroke(b, THEME.line, 1)
+	b.MouseEnter:Connect(function()
+		tween(b, 0.12, { BackgroundColor3 = THEME.row })
+	end)
+	b.MouseLeave:Connect(function()
+		tween(b, 0.12, { BackgroundColor3 = THEME.input })
+	end)
+	b.MouseButton1Click:Connect(function()
+		if callback then
+			task.spawn(callback)
+		end
+	end)
+end
+
+function UI.playerList(col, callback)
+	local holder = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 100),
+		BackgroundColor3 = THEME.input,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, col)
+	corner(holder, 8)
+	stroke(holder, THEME.line, 1)
+
+	local list = new("ScrollingFrame", {
+		Size = UDim2.new(1, -8, 1, -8),
+		Position = UDim2.fromOffset(4, 4),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = THEME.off,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, holder)
+	new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.Name }, list)
+
+	local selected
+	local entries = {}
+
+	local function refresh()
+		for _, e in pairs(entries) do
+			e.button:Destroy()
+		end
+		table.clear(entries)
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				local b = new("TextButton", {
+					Name = p.Name,
+					Size = UDim2.new(1, 0, 0, 28),
+					BackgroundColor3 = THEME.row,
+					Text = p.Name,
+					TextColor3 = THEME.text,
+					Font = Enum.Font.GothamMedium,
+					TextSize = 13,
+					AutoButtonColor = false,
+				}, list)
+				corner(b, 6)
+				local st = stroke(b, ACCENT, 1.5)
+				bindAccent(st, "Color")
+				st.Transparency = (selected == p) and 0 or 1
+				entries[p] = { button = b, stroke = st }
+				b.MouseButton1Click:Connect(function()
+					if selected and entries[selected] then
+						entries[selected].stroke.Transparency = 1
+					end
+					if selected == p then
+						selected = nil
+					else
+						selected = p
+						st.Transparency = 0
+					end
+					if callback then
+						task.spawn(callback, selected)
+					end
+				end)
+			end
+		end
+	end
+
+	Players.PlayerAdded:Connect(refresh)
+	Players.PlayerRemoving:Connect(function(p)
+		if selected == p then
+			selected = nil
+			if callback then
+				task.spawn(callback, nil)
+			end
+		end
+		task.defer(refresh)
+	end)
+	refresh()
+	return { Get = function() return selected end }
+end
+
+function UI.colors(col, text, colors, callback)
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, #colors * 26 + 10)
+	for i, color in ipairs(colors) do
+		local s = new("TextButton", {
+			Size = UDim2.fromOffset(20, 20),
+			Position = UDim2.new(1, -(#colors - i + 1) * 26 + 6, 0.5, -10),
+			BackgroundColor3 = color,
+			Text = "",
+			AutoButtonColor = false,
+		}, row)
+		corner(s, 10)
+		s.MouseButton1Click:Connect(function()
+			setAccent(color)
+			if callback then
+				task.spawn(callback, color)
+			end
+		end)
+	end
+end
+
+function UI.listBox(col, height, onSelect)
+	local holder = new("Frame", {
+		Size = UDim2.new(1, 0, 0, height),
+		BackgroundColor3 = THEME.input,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, col)
+	corner(holder, 8)
+	stroke(holder, THEME.line, 1)
+
+	local list = new("ScrollingFrame", {
+		Size = UDim2.new(1, -8, 1, -8),
+		Position = UDim2.fromOffset(4, 4),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = THEME.off,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, holder)
+	new("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+
+	local items, selected, rows = {}, nil, {}
+
+	local function render()
+		for _, r in ipairs(rows) do
+			r:Destroy()
+		end
+		table.clear(rows)
+		if selected and selected > #items then
+			selected = nil
+		end
+		if #items == 0 then
+			rows[1] = new("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 24),
+				BackgroundTransparency = 1,
+				Text = "Nenhum passo ainda",
+				TextColor3 = THEME.muted,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+			}, list)
+			return
+		end
+		for i, text in ipairs(items) do
+			local isSel = selected == i
+			local b = new("TextButton", {
+				Size = UDim2.new(1, 0, 0, 24),
+				BackgroundColor3 = THEME.row,
+				BackgroundTransparency = isSel and 0 or 1,
+				Text = "  " .. text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextColor3 = isSel and THEME.text or THEME.muted,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				AutoButtonColor = false,
+				LayoutOrder = i,
+			}, list)
+			corner(b, 5)
+			b.MouseButton1Click:Connect(function()
+				selected = if selected == i then nil else i
+				render()
+				if onSelect then
+					onSelect(selected)
+				end
+			end)
+			rows[i] = b
+		end
+	end
+	render()
+
+	return {
+		Set = function(newItems, sel)
+			items, selected = newItems, sel
+			render()
+		end,
+		Get = function()
+			return selected
+		end,
+	}
+end
+
+----------------------------------------------------------------------
+-- LÓGICA
+----------------------------------------------------------------------
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+
+local cfg = {
+	aimbot = false,
+	silentPlayers = false,
+	silentNpc = false,
+	showFov = false,
+	fovSize = 360, -- diâmetro do círculo em pixels (o painel controla o RAIO = metade)
+	smooth = 0.35, -- força da mira: 0.05 = suave ... 1 = trava na hora
+	aimPart = "Cabeça", -- "Cabeça" ou "Tronco"
+	wallCheck = true,
+	teamCheck = true,
+	priority = "Mais próximo",
+	fovMode = "V1", -- V1 = círculo no mouse, V2 = círculo no centro da tela
+	lockedTarget = nil,
+	speedOn = false,
+	walkSpeed = 80,
+	jumpForce = 300,
+	noclip = false,
+	noFall = false,
+	soru = { enabled = false, key = Enum.KeyCode.Q, distance = 45, cooldown = 2, trail = true, sound = true, direction = "Movimento", readyAt = 0 },
+	glideA = { enabled = false, key = Enum.KeyCode.H, speed = 350, time = 20, keepHeight = true, busy = false },
+	glideB = { enabled = false, key = Enum.KeyCode.J, speed = 300, time = 15, keepHeight = true, busy = false },
+	fly = { key = Enum.KeyCode.F, speed = 60 },
+}
+
+-- Ponte para os scripts do SEU jogo (skills, silent aim, teclas virtuais).
+local hooks = {
+	FastSkill = false,
+}
+shared.SukyWare = hooks
+
+local function num(text, min, max, fallback)
+	local n = tonumber(text)
+	if not n then
+		return fallback
+	end
+	return math.clamp(n, min, max)
+end
+
+local function getChar()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if hum and root and hum.Health > 0 then
+		return char, hum, root
+	end
+	return nil
+end
+
+----------------------------------------------------------------------
+-- ALVOS (aimbot / silent aim)
+----------------------------------------------------------------------
+local function aimPartOf(char)
+	if cfg.aimPart == "Tronco" then
+		return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+	end
+	return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
+
+local npcCache, npcCacheAt = {}, 0
+
+local function refreshNpcs()
+	if os.clock() - npcCacheAt < 1 then
+		return
+	end
+	npcCacheAt = os.clock()
+	table.clear(npcCache)
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("Humanoid") and d.Health > 0 then
+			local model = d.Parent
+			if model and model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
+				local part = aimPartOf(model)
+				if part then
+					table.insert(npcCache, { part = part, hum = d, char = model })
+				end
+			end
+		end
+	end
+end
+
+local function collectTargets(includePlayers, includeNpcs)
+	local list = {}
+	if includePlayers then
+		for _, other in ipairs(Players:GetPlayers()) do
+			local sameTeam = cfg.teamCheck and other.Team ~= nil and other.Team == player.Team
+			if other ~= player and not sameTeam then
+				local char = other.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				local part = char and aimPartOf(char)
+				if hum and hum.Health > 0 and part then
+					table.insert(list, { part = part, hum = hum, char = char })
+				end
+			end
+		end
+	end
+	if includeNpcs then
+		refreshNpcs()
+		for _, e in ipairs(npcCache) do
+			if e.part.Parent and e.hum.Health > 0 then
+				table.insert(list, e)
+			end
+		end
+	end
+	return list
+end
+
+local function fovCenter()
+	local camera = workspace.CurrentCamera
+	if cfg.fovMode == "V2" then
+		return camera.ViewportSize / 2
+	end
+	return UserInputService:GetMouseLocation()
+end
+
+local function isVisible(e)
+	local camera = workspace.CurrentCamera
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	local origin = camera.CFrame.Position
+	local result = workspace:Raycast(origin, e.part.Position - origin, params)
+	return result == nil or result.Instance:IsDescendantOf(e.char)
+end
+
+local function pickTarget(list, needVisible)
+	local camera = workspace.CurrentCamera
+	local center = fovCenter()
+	local _, _, myRoot = getChar()
+	local best, bestScore
+	for _, e in ipairs(list) do
+		local pos, onScreen = camera:WorldToViewportPoint(e.part.Position)
+		if onScreen then
+			local screenDist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+			if screenDist <= cfg.fovSize / 2 and (not needVisible or not cfg.wallCheck or isVisible(e)) then
+				local score
+				if cfg.priority == "Menor vida" then
+					score = e.hum.Health
+				elseif cfg.priority == "Mais perto da mira" then
+					score = screenDist
+				else
+					score = myRoot and (e.part.Position - myRoot.Position).Magnitude or screenDist
+				end
+				if not bestScore or score < bestScore then
+					best, bestScore = e, score
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- O script de arma/skill do SEU jogo chama isto para saber onde mirar:
+--   local part = shared.SukyWare and shared.SukyWare.GetSilentAimPart()
+--   if part then  alvo = part.Position  end
+function hooks.GetSilentAimPart()
+	if not hasPerm("Aimbot") or not (cfg.silentPlayers or cfg.silentNpc) then
+		return nil
+	end
+	local best = pickTarget(collectTargets(cfg.silentPlayers, cfg.silentNpc), false)
+	return best and best.part or nil
+end
+
+local fovCircle = new("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundTransparency = 1,
+	Size = UDim2.fromOffset(cfg.fovSize, cfg.fovSize),
+	Visible = false,
+	ZIndex = 0,
+}, gui)
+corner(fovCircle, 9999)
+bindAccent(stroke(fovCircle, Color3.new(1, 1, 1), 1.5), "Color")
+
+RunService.RenderStepped:Connect(function()
+	fovCircle.Visible = cfg.showFov
+	if cfg.showFov then
+		local c = fovCenter()
+		fovCircle.Position = UDim2.fromOffset(c.X, c.Y)
+		fovCircle.Size = UDim2.fromOffset(cfg.fovSize, cfg.fovSize)
+	end
+
+	if not cfg.aimbot or not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+		return
+	end
+
+	local target
+	local locked = cfg.lockedTarget
+	if locked and locked.Parent then
+		local char = locked.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		local part = char and aimPartOf(char)
+		if hum and hum.Health > 0 and part then
+			target = part
+		end
+	end
+	if not target then
+		local best = pickTarget(collectTargets(true, false), true)
+		target = best and best.part
+	end
+	if target then
+		local camera = workspace.CurrentCamera
+		local goal = CFrame.lookAt(camera.CFrame.Position, target.Position)
+		camera.CFrame = camera.CFrame:Lerp(goal, cfg.smooth)
+	end
 end)
+
+----------------------------------------------------------------------
+-- VELOCIDADE (o servidor aplica e limita)
+----------------------------------------------------------------------
+local speedBackup
+local function applySpeed()
+	local _, hum = getChar()
+	if not hum then
+		return
+	end
+	if cfg.speedOn then
+		speedBackup = speedBackup or hum.WalkSpeed
+		hum.WalkSpeed = math.clamp(cfg.walkSpeed, 0, 250)
+	elseif speedBackup then
+		hum.WalkSpeed = speedBackup
+		speedBackup = nil
+	end
+end
+
+----------------------------------------------------------------------
+-- SUPER PULO (tecla G)
+----------------------------------------------------------------------
+local function jumpBoost()
+	if not hasPerm("Jump") then
+		return
+	end
+	local _, _, root = getChar()
+	if root then
+		local v = root.AssemblyLinearVelocity
+		root.AssemblyLinearVelocity = Vector3.new(v.X, math.clamp(cfg.jumpForce, 0, 400), v.Z)
+	end
+end
+
+----------------------------------------------------------------------
+-- DESLIZE / GLITCH
+----------------------------------------------------------------------
+local function makeGlide(g)
+	return function()
+		if not g.enabled or g.busy then
+			return
+		end
+		local _, hum, root = getChar()
+		if not root then
+			return
+		end
+		local dir = hum.MoveDirection
+		if dir.Magnitude < 0.1 then
+			local look = workspace.CurrentCamera.CFrame.LookVector
+			dir = Vector3.new(look.X, 0, look.Z)
+		end
+		if dir.Magnitude < 0.01 then
+			return
+		end
+		dir = dir.Unit
+		g.busy = true
+		local endAt = os.clock() + g.time / 100
+		local conn
+		conn = RunService.Heartbeat:Connect(function()
+			local _, _, r = getChar()
+			if not r or os.clock() >= endAt then
+				conn:Disconnect()
+				g.busy = false
+				return
+			end
+			local y = g.keepHeight and 0 or r.AssemblyLinearVelocity.Y
+			r.AssemblyLinearVelocity = Vector3.new(dir.X * g.speed, y, dir.Z * g.speed)
+		end)
+	end
+end
+
+local triggerGlideA = makeGlide(cfg.glideA)
+local triggerGlideB = makeGlide(cfg.glideB)
+
+----------------------------------------------------------------------
+-- SORU (o servidor move o personagem)
+----------------------------------------------------------------------
+local function getSoruDirection()
+	local _, hum, root = getChar()
+	if not root then
+		return nil
+	end
+	local camera = workspace.CurrentCamera
+	local dir
+	if cfg.soru.direction == "Câmera" then
+		local l = camera.CFrame.LookVector
+		dir = Vector3.new(l.X, 0, l.Z)
+	elseif cfg.soru.direction == "Mouse" then
+		local m = UserInputService:GetMouseLocation()
+		local ray = camera:ViewportPointToRay(m.X, m.Y)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { player.Character }
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+		local pos = hit and hit.Position or (ray.Origin + ray.Direction * 100)
+		local d = pos - root.Position
+		dir = Vector3.new(d.X, 0, d.Z)
+	else
+		dir = hum.MoveDirection
+		if dir.Magnitude < 0.1 then
+			local l = camera.CFrame.LookVector
+			dir = Vector3.new(l.X, 0, l.Z)
+		end
+	end
+	if dir.Magnitude < 0.01 then
+		return nil
+	end
+	return dir.Unit
+end
+
+local SORU_SOUND_ID = "" -- ex.: "rbxassetid://123456" (vazio = sem som)
+
+local function soruLocal(dir, distance, trail, sound)
+	local char, _, root = getChar()
+	if not root then
+		return
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+
+	local origin = root.Position
+	local hit = workspace:Raycast(origin, dir * distance, params)
+	local travel = hit and math.max(hit.Distance - 3, 0) or distance
+	local target = origin + dir * travel
+	root.CFrame = CFrame.lookAt(target, target + dir)
+
+	if trail and travel > 1 then
+		local part = Instance.new("Part")
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.Material = Enum.Material.Neon
+		part.Color = Color3.new(1, 1, 1)
+		part.Size = Vector3.new(1.5, 1.5, travel)
+		part.CFrame = CFrame.lookAt(origin:Lerp(target, 0.5), target)
+		part.Parent = workspace
+		TweenService:Create(part, TweenInfo.new(0.4), { Transparency = 1, Size = Vector3.new(0.1, 0.1, travel) }):Play()
+		Debris:AddItem(part, 0.5)
+	end
+	if sound and SORU_SOUND_ID ~= "" then
+		local snd = Instance.new("Sound")
+		snd.SoundId = SORU_SOUND_ID
+		snd.Parent = root
+		snd:Play()
+		Debris:AddItem(snd, 3)
+	end
+end
+
+local function doSoru(force)
+	local s = cfg.soru
+	if not force and (not s.enabled or os.clock() < s.readyAt) then
+		return
+	end
+	local dir = getSoruDirection()
+	if not dir then
+		return
+	end
+	s.readyAt = os.clock() + s.cooldown
+	soruLocal(dir, s.distance, s.trail, s.sound)
+end
+
+----------------------------------------------------------------------
+-- FLY / NOCLIP / SEM DANO DE QUEDA
+----------------------------------------------------------------------
+local flyState = { enabled = false, lv = nil, att = nil }
+local flyToggle
+
+local function stopFly()
+	if flyState.lv then
+		flyState.lv:Destroy()
+		flyState.lv = nil
+	end
+	if flyState.att then
+		flyState.att:Destroy()
+		flyState.att = nil
+	end
+	local _, hum = getChar()
+	if hum then
+		hum.PlatformStand = false
+	end
+end
+
+local function startFly()
+	local _, hum, root = getChar()
+	if not root then
+		return false
+	end
+	stopFly()
+	local att = Instance.new("Attachment")
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0 = att
+	lv.MaxForce = math.huge
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.VectorVelocity = Vector3.zero
+	lv.Parent = root
+	flyState.att, flyState.lv = att, lv
+	hum.PlatformStand = true
+	return true
+end
+
+RunService.Heartbeat:Connect(function()
+	if flyState.enabled then
+		local _, hum, root = getChar()
+		if not root or not flyState.lv or not flyState.lv.Parent then
+			flyState.enabled = false
+			stopFly()
+			if flyToggle then
+				flyToggle.Set(false, true)
+			end
+		else
+			local cam = workspace.CurrentCamera.CFrame
+			local move = Vector3.zero
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.yAxis end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.yAxis end
+			if move.Magnitude < 0.01 and hum.MoveDirection.Magnitude > 0.1 then
+				move = hum.MoveDirection -- celular / controle
+			end
+			flyState.lv.VectorVelocity = move.Magnitude > 0.01 and move.Unit * cfg.fly.speed or Vector3.zero
+		end
+	end
+
+	if cfg.noFall then
+		local _, _, root = getChar()
+		if root then
+			local v = root.AssemblyLinearVelocity
+			if v.Y < -70 then
+				root.AssemblyLinearVelocity = Vector3.new(v.X, -70, v.Z)
+			end
+		end
+	end
+end)
+
+RunService.Stepped:Connect(function()
+	if not cfg.noclip then
+		return
+	end
+	local char = player.Character
+	if not char then
+		return
+	end
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CanCollide = false
+		end
+	end
+end)
+
+----------------------------------------------------------------------
+-- ESP
+----------------------------------------------------------------------
+local esp = { on = false, names = false, dist = false, health = false, maxDist = 1000, style = "Contorno", ignoreTeam = true }
+local espObjects = {}
+
+local function clearEsp(p)
+	local o = espObjects[p]
+	if o then
+		for _, inst in pairs(o) do
+			if typeof(inst) == "Instance" then
+				inst:Destroy()
+			end
+		end
+		espObjects[p] = nil
+	end
+end
+
+local function buildEsp(char)
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return nil
+	end
+	local o = { char = char }
+	o.hl = new("Highlight", {
+		Adornee = char,
+		OutlineColor = Color3.new(1, 1, 1),
+		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+	}, gui)
+	o.box = new("BoxHandleAdornment", {
+		Adornee = root,
+		Size = Vector3.new(4, 6, 2),
+		AlwaysOnTop = true,
+		ZIndex = 1,
+		Transparency = 0.5,
+	}, gui)
+	o.bb = new("BillboardGui", {
+		Adornee = root,
+		Size = UDim2.fromOffset(180, 54),
+		StudsOffset = Vector3.new(0, 3.8, 0),
+		AlwaysOnTop = true,
+	}, gui)
+	o.label = new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		TextColor3 = Color3.new(1, 1, 1),
+		TextStrokeTransparency = 0.4,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+	}, o.bb)
+	return o
+end
+
+local lastEsp = 0
+RunService.Heartbeat:Connect(function()
+	if os.clock() - lastEsp < 0.1 then
+		return
+	end
+	lastEsp = os.clock()
+
+	if not esp.on then
+		for p in pairs(espObjects) do
+			clearEsp(p)
+		end
+		return
+	end
+
+	local _, _, myRoot = getChar()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local char = p.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local sameTeam = esp.ignoreTeam and p.Team ~= nil and p.Team == player.Team
+			if not (hum and root and hum.Health > 0) or sameTeam then
+				clearEsp(p)
+			else
+				local o = espObjects[p]
+				if not o or o.char ~= char then
+					clearEsp(p)
+					o = buildEsp(char)
+					espObjects[p] = o
+				end
+				if o then
+					local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
+					local inRange = dist <= esp.maxDist
+					o.hl.Enabled = inRange and esp.style ~= "Caixa"
+					o.hl.FillColor = ACCENT
+					o.hl.FillTransparency = esp.style == "Preenchido" and 0.5 or 1
+					o.box.Visible = inRange and esp.style == "Caixa"
+					o.box.Color3 = ACCENT
+					o.bb.Enabled = inRange and (esp.names or esp.dist or esp.health)
+					local lines = {}
+					if esp.names then
+						table.insert(lines, p.DisplayName)
+					end
+					if esp.dist then
+						table.insert(lines, math.floor(dist) .. " studs")
+					end
+					if esp.health then
+						table.insert(lines, math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. " HP")
+					end
+					o.label.Text = table.concat(lines, "\n")
+				end
+			end
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(clearEsp)
+
+----------------------------------------------------------------------
+-- TECLAS
+----------------------------------------------------------------------
+local recorder = { on = false, events = {}, downs = {}, target = 1 }
+
+local function onKeyDown(k)
+	if k == cfg.soru.key then
+		doSoru()
+	elseif k == cfg.glideA.key then
+		triggerGlideA()
+	elseif k == cfg.glideB.key then
+		triggerGlideB()
+	elseif k == Enum.KeyCode.G then
+		jumpBoost()
+	elseif k == cfg.fly.key and flyToggle then
+		flyToggle.Set(not flyToggle.Get())
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed or recorder.on or input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	onKeyDown(input.KeyCode)
+end)
+
+----------------------------------------------------------------------
+-- MOUSE, TECLAS VIRTUAIS E TP SPAM
+----------------------------------------------------------------------
+-- IMPORTANTE: o Roblox não deixa nenhum script gerar teclas reais do teclado.
+-- "Enviar tecla" funciona assim: o painel dispara o BindableEvent
+-- ReplicatedStorage.SukyWareKey e também executa as funções do próprio painel
+-- (Soru, Glide, Fly...). Para a tecla R (ou outra) do SEU jogo, o script da
+-- habilidade precisa escutar o evento:
+--
+--   local ev = game:GetService("ReplicatedStorage"):WaitForChild("SukyWareKey")
+--   ev.Event:Connect(function(input, isDown, mousePos)
+--       if input == Enum.KeyCode.R and isDown then minhaHabilidadeR(mousePos) end
+--   end)
+local keyEvent = Instance.new("BindableEvent")
+keyEvent.Name = "SukyWareKey"
+keyEvent.Parent = game:GetService("ReplicatedStorage")
+
+local function getMouseWorld(maxDist)
+	local camera = workspace.CurrentCamera
+	local m = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(m.X, m.Y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	local hit = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+	if hit then
+		return hit.Position, true
+	end
+	return ray.Origin + ray.Direction * (maxDist or 2000), false
+end
+
+local mouseCache, mouseCacheAt = Vector3.zero, 0
+local function sendInput(input, down)
+	if os.clock() - mouseCacheAt > 0.01 then
+		mouseCache = getMouseWorld()
+		mouseCacheAt = os.clock()
+	end
+	keyEvent:Fire(input, down, mouseCache)
+	if down and typeof(input) == "EnumItem" and input.EnumType == Enum.KeyCode then
+		onKeyDown(input)
+	end
+end
+hooks.SendInput = sendInput
+
+local function teleportToMouse(maxDist)
+	local _, _, root = getChar()
+	if not root then
+		return
+	end
+	local pos, hit = getMouseWorld(maxDist)
+	local d = pos - root.Position
+	if d.Magnitude < 1 then
+		return
+	end
+	if d.Magnitude > maxDist then
+		d = d.Unit * maxDist
+	end
+	local target = root.Position + d
+	if hit then
+		target += Vector3.new(0, 3, 0)
+	end
+	root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
+end
+
+-- TP SPAM -------------------------------------------------------------
+local tps = {
+	enabled = false,
+	key = Enum.KeyCode.T,
+	sendKey = Enum.KeyCode.R,
+	interval = 10, -- ms entre cada disparo
+	mode = "Segurar", -- "Segurar" ou "Alternar"
+	action = "Teleporte nativo", -- ou "Enviar tecla (jogo)"
+	maxDist = 80,
+	active = false,
+	accum = 0,
+}
+
+local function tpsFire()
+	if tps.action == "Enviar tecla (jogo)" then
+		sendInput(tps.sendKey, true)
+		sendInput(tps.sendKey, false)
+	else
+		teleportToMouse(tps.maxDist)
+	end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	if not tps.active then
+		tps.accum = 0
+		return
+	end
+	tps.accum += dt * 1000
+	local n = math.min(math.floor(tps.accum / tps.interval), 30) -- vários por frame se o intervalo for menor que um frame
+	if n >= 30 then
+		tps.accum = 0
+	else
+		tps.accum -= n * tps.interval
+	end
+	for _ = 1, n do
+		tpsFire()
+	end
+end)
+
+local function tpsInput(input, began)
+	if not tps.enabled or input.KeyCode ~= tps.key or not hasPerm("Soru") then
+		return
+	end
+	if tps.mode == "Alternar" then
+		if began then
+			tps.active = not tps.active
+			notify("TP Spam " .. (tps.active and "ligado" or "desligado"))
+		end
+	else
+		tps.active = began
+	end
+end
+
+-- MACROS --------------------------------------------------------------
+local MACRO_COUNT = 5
+local macroKeys = { Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.V, Enum.KeyCode.B }
+local macros = {}
+for i = 1, MACRO_COUNT do
+	macros[i] = {
+		enabled = false,
+		key = macroKeys[i],
+		mode = "Segurar", -- "Segurar", "Alternar" ou "Uma vez"
+		loops = 0, -- 0 = infinito
+		cycleDelay = 0, -- ms entre ciclos
+		speed = 100, -- % (200 = o dobro da velocidade)
+		jitter = 0, -- variação aleatória em ms (+/-)
+		steps = {},
+		running = false,
+		token = 0,
+	}
+end
+
+local ACTIONS = {
+	{ name = "Tecla", type = "Tecla" },
+	{ name = "Segurar tecla", type = "Segurar" },
+	{ name = "Soltar tecla", type = "Soltar" },
+	{ name = "Clique esquerdo", type = "Clique", btn = 1 },
+	{ name = "Clique direito", type = "Clique", btn = 2 },
+	{ name = "Esperar", type = "Esperar" },
+	{ name = "Spam de tecla", type = "Spam" },
+	{ name = "Soru", type = "Soru" },
+	{ name = "TP até o mouse", type = "TP mouse" },
+}
+
+local function describeStep(i, st)
+	local t = st.type
+	local hold, delay = st.hold or 0, st.delay or 0
+	if t == "Tecla" then
+		return string.format("%d. Tecla %s  (segura %gms, espera %gms)", i, st.key.Name, hold, delay)
+	elseif t == "Segurar" then
+		return string.format("%d. Segurar %s  (espera %gms)", i, st.key.Name, delay)
+	elseif t == "Soltar" then
+		return string.format("%d. Soltar %s  (espera %gms)", i, st.key.Name, delay)
+	elseif t == "Clique" then
+		return string.format("%d. Clique %s  (segura %gms, espera %gms)", i, st.btn == 2 and "dir." or "esq.", hold, delay)
+	elseif t == "Esperar" then
+		return string.format("%d. Esperar %gms", i, delay)
+	elseif t == "Spam" then
+		return string.format("%d. Spam %s x%g  (segura %gms, espera %gms)", i, st.key.Name, st.count or 1, hold, delay)
+	elseif t == "Soru" then
+		return string.format("%d. Soru  (espera %gms)", i, delay)
+	elseif t == "TP mouse" then
+		return string.format("%d. TP até o mouse  (espera %gms)", i, delay)
+	end
+	return i .. ". " .. tostring(t)
+end
+
+local function runMacro(m, tok, cycles)
+	local steps = table.clone(m.steps)
+	if #steps == 0 then
+		m.running = false
+		notify("Esse macro não tem passos")
+		return
+	end
+	local debt = 0
+	local held = {}
+
+	local function alive()
+		return m.running and m.token == tok
+	end
+
+	local function scaled(v)
+		v = v * 100 / math.max(m.speed, 1)
+		if m.jitter > 0 then
+			v += (math.random() * 2 - 1) * m.jitter
+		end
+		return math.max(v, 0)
+	end
+
+	-- Espera em ms. O Roblox só "acorda" a cada frame (~16ms a 60 FPS), então
+	-- tempos menores são somados e compensados para a média ficar certa.
+	local function sleep(v)
+		debt += scaled(v)
+		if debt >= 8 then
+			local target = os.clock() + debt / 1000
+			repeat
+				RunService.Heartbeat:Wait()
+			until os.clock() >= target or not alive()
+			debt = -math.max(os.clock() - target, 0) * 1000
+		end
+	end
+
+	local function press(input, down)
+		sendInput(input, down)
+		held[input] = down or nil
+	end
+
+	local function tap(input, st)
+		press(input, true)
+		sleep(st.hold or 0)
+		press(input, false)
+		sleep(st.delay or 0)
+	end
+
+	local function doStep(st)
+		local t = st.type
+		if t == "Tecla" then
+			tap(st.key, st)
+		elseif t == "Segurar" then
+			press(st.key, true)
+			sleep(st.delay or 0)
+		elseif t == "Soltar" then
+			press(st.key, false)
+			sleep(st.delay or 0)
+		elseif t == "Clique" then
+			tap(st.btn == 2 and Enum.UserInputType.MouseButton2 or Enum.UserInputType.MouseButton1, st)
+		elseif t == "Esperar" then
+			sleep(st.delay or 0)
+		elseif t == "Spam" then
+			for _ = 1, st.count or 1 do
+				if not alive() then
+					break
+				end
+				tap(st.key, st)
+			end
+		elseif t == "Soru" then
+			doSoru(true)
+			sleep(st.delay or 0)
+		elseif t == "TP mouse" then
+			teleportToMouse(tps.maxDist)
+			sleep(st.delay or 0)
+		end
+	end
+
+	local done = 0
+	while alive() do
+		for _, st in ipairs(steps) do
+			if not alive() then
+				break
+			end
+			doStep(st)
+		end
+		done += 1
+		if cycles > 0 and done >= cycles then
+			break
+		end
+		if not alive() then
+			break
+		end
+		sleep(m.cycleDelay)
+		RunService.Heartbeat:Wait() -- nunca trava o jogo, mesmo com todos os tempos em 0
+	end
+
+	for input in pairs(held) do
+		sendInput(input, false) -- solta qualquer tecla que ficou presa
+	end
+	if m.token == tok then
+		m.running = false
+	end
+end
+
+local function startMacro(m, cycles)
+	if m.running or not hasPerm("Macro") then
+		return
+	end
+	m.running = true
+	m.token += 1
+	task.spawn(runMacro, m, m.token, cycles)
+end
+
+local function stopMacro(m)
+	m.running = false
+end
+
+-- GRAVAÇÃO ------------------------------------------------------------
+local function makeTap(input, hold, delay)
+	if typeof(input) == "EnumItem" and input.EnumType == Enum.UserInputType then
+		return { type = "Clique", btn = input == Enum.UserInputType.MouseButton2 and 2 or 1, hold = hold, delay = delay }
+	end
+	return { type = "Tecla", key = input, hold = hold, delay = delay }
+end
+
+local function buildStepsFromEvents(events)
+	-- 1) eventos -> Segurar / Soltar / Esperar
+	local raw = {}
+	local last = events[1] and events[1].t or 0
+	for _, e in ipairs(events) do
+		local gap = math.floor((e.t - last) * 1000 + 0.5)
+		if gap > 0 then
+			table.insert(raw, { type = "Esperar", delay = gap })
+		end
+		last = e.t
+		table.insert(raw, { type = e.down and "Segurar" or "Soltar", key = e.input, delay = 0 })
+	end
+
+	-- 2) Segurar K + Esperar + Soltar K vira um toque (Tecla/Clique)
+	local merged, i = {}, 1
+	while i <= #raw do
+		local a, b, c = raw[i], raw[i + 1], raw[i + 2]
+		if a.type == "Segurar" and b and b.type == "Esperar" and c and c.type == "Soltar" and c.key == a.key then
+			table.insert(merged, makeTap(a.key, b.delay, 0))
+			i += 3
+		elseif a.type == "Segurar" and b and b.type == "Soltar" and b.key == a.key then
+			table.insert(merged, makeTap(a.key, 0, 0))
+			i += 2
+		else
+			table.insert(merged, a)
+			i += 1
+		end
+	end
+
+	-- 3) Esperar depois de um passo vira o "esperar após" dele
+	local out = {}
+	for _, st in ipairs(merged) do
+		local prev = out[#out]
+		if st.type == "Esperar" and prev and prev.type ~= "Esperar" then
+			prev.delay = (prev.delay or 0) + st.delay
+		else
+			table.insert(out, st)
+		end
+	end
+	return out
+end
+
+local function inputKey(input)
+	return input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode or input.UserInputType
+end
+
+local function isRecordable(input)
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		local k = input.KeyCode
+		if k == toggleKey or k == tps.key then
+			return false
+		end
+		for _, m in ipairs(macros) do
+			if m.key == k then
+				return false
+			end
+		end
+		return true
+	end
+	return input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.MouseButton2
+end
+
+-- ENTRADAS REAIS (ativar macros, TP Spam e gravar) ---------------------
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if recorder.on then
+		if isRecordable(input) then
+			local key = inputKey(input)
+			recorder.downs[key] = true
+			table.insert(recorder.events, { t = os.clock(), down = true, input = key })
+		end
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	tpsInput(input, true)
+	for _, m in ipairs(macros) do
+		if m.enabled and m.key == input.KeyCode then
+			if m.mode == "Alternar" then
+				if m.running then
+					stopMacro(m)
+					notify("Macro desligado")
+				else
+					startMacro(m, m.loops)
+					notify("Macro ligado")
+				end
+			else
+				startMacro(m, m.mode == "Uma vez" and math.max(1, m.loops) or m.loops)
+			end
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if recorder.on then
+		local key = inputKey(input)
+		if recorder.downs[key] then
+			recorder.downs[key] = nil
+			table.insert(recorder.events, { t = os.clock(), down = false, input = key })
+		end
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	tpsInput(input, false)
+	for _, m in ipairs(macros) do
+		if m.mode == "Segurar" and m.key == input.KeyCode then
+			stopMacro(m)
+		end
+	end
+end)
+
+player.CharacterAdded:Connect(function()
+	task.wait(0.5)
+	speedBackup = nil
+	if flyState.enabled then
+		flyState.enabled = false
+		stopFly()
+		if flyToggle then
+			flyToggle.Set(false, true)
+		end
+	end
+	if cfg.speedOn then
+		applySpeed()
+	end
+end)
+
+----------------------------------------------------------------------
+-- CONTEÚDO
+----------------------------------------------------------------------
+
+-- PVP -----------------------------------------------------------------
+do
+	local left, right = createTab("PVP")
+
+	UI.section(left, "Aimbot")
+	UI.toggle(left, "Aimbot (botão direito)", false, function(v)
+		cfg.aimbot = v
+	end, "RButton", "Aimbot")
+	UI.playerList(left, function(selectedPlayer)
+		cfg.lockedTarget = selectedPlayer
+	end)
+
+	UI.section(left, "Silent Aim")
+	UI.toggle(left, "Player Silent Aim", false, function(v)
+		cfg.silentPlayers = v
+	end, nil, "Aimbot")
+	UI.toggle(left, "NPC Silent Aim", false, function(v)
+		cfg.silentNpc = v
+	end, nil, "Aimbot")
+	UI.toggle(left, "Mostrar círculo de FOV", false, function(v)
+		cfg.showFov = v
+	end)
+	UI.slider(left, "Raio do FOV (px)", 20, 600, cfg.fovSize / 2, 5, function(v)
+		cfg.fovSize = v * 2
+	end)
+	UI.dropdown(left, "Prioridade", { "Mais próximo", "Menor vida", "Mais perto da mira" }, cfg.priority, function(v)
+		cfg.priority = v
+	end)
+	UI.dropdown(left, "Modo de FOV", { "V1", "V2" }, cfg.fovMode, function(v)
+		cfg.fovMode = v
+	end)
+	UI.slider(left, "Força da mira (%)", 5, 100, cfg.smooth * 100, 1, function(v)
+		cfg.smooth = v / 100
+	end)
+	UI.dropdown(left, "Alvo da mira", { "Cabeça", "Tronco" }, cfg.aimPart, function(v)
+		cfg.aimPart = v
+	end)
+	UI.toggle(left, "Checar parede", true, function(v)
+		cfg.wallCheck = v
+	end)
+	UI.toggle(left, "Checar time", true, function(v)
+		cfg.teamCheck = v
+	end)
+
+	UI.section(right, "Velocidade")
+	UI.toggle(right, "Speed Hack", false, function(v)
+		cfg.speedOn = v
+		applySpeed()
+	end, nil, "Speed")
+	UI.slider(right, "WalkSpeed", 16, 200, cfg.walkSpeed, 1, function(v)
+		cfg.walkSpeed = v
+		if cfg.speedOn then
+			applySpeed()
+		end
+	end)
+
+	UI.section(right, "Deslize")
+	UI.toggle(right, "Deslize ativado", false, function(v)
+		cfg.glideA.enabled = v
+	end, nil, "Glide")
+	UI.keybind(right, "Tecla do deslize", cfg.glideA.key, function(k)
+		cfg.glideA.key = k
+	end)
+	UI.slider(right, "Velocidade do deslize", 50, 1000, cfg.glideA.speed, 10, function(v)
+		cfg.glideA.speed = v
+	end)
+	UI.slider(right, "Tempo do deslize (cs)", 1, 100, cfg.glideA.time, 1, function(v)
+		cfg.glideA.time = v
+	end)
+	local jumpInput
+	jumpInput = UI.input(right, "Força do pulo (G)", cfg.jumpForce, function(text)
+		cfg.jumpForce = num(text, 0, 400, cfg.jumpForce)
+		jumpInput.Set(cfg.jumpForce)
+	end)
+
+	UI.section(right, "Extra")
+	UI.toggle(right, "Skill rápida", false, function(v)
+		hooks.FastSkill = v
+	end, nil, "Combat")
+end
+
+-- SORU ----------------------------------------------------------------
+do
+	local left, right = createTab("Soru")
+
+	UI.section(left, "Soru")
+	UI.toggle(left, "Soru ativado", false, function(v)
+		cfg.soru.enabled = v
+	end, nil, "Soru")
+	UI.keybind(left, "Tecla do Soru", cfg.soru.key, function(k)
+		cfg.soru.key = k
+	end)
+	UI.slider(left, "Distância", 10, 120, cfg.soru.distance, 1, function(v)
+		cfg.soru.distance = v
+	end)
+	UI.slider(left, "Cooldown (s)", 0, 10, cfg.soru.cooldown, 0.5, function(v)
+		cfg.soru.cooldown = v
+	end)
+
+	UI.section(left, "Efeitos")
+	UI.toggle(left, "Rastro", true, function(v)
+		cfg.soru.trail = v
+	end)
+	UI.toggle(left, "Som", true, function(v)
+		cfg.soru.sound = v
+	end)
+	UI.dropdown(left, "Direção", { "Movimento", "Câmera", "Mouse" }, cfg.soru.direction, function(v)
+		cfg.soru.direction = v
+	end)
+
+	UI.section(right, "TP Spam")
+	UI.toggle(right, "TP Spam ativado", false, function(v)
+		tps.enabled = v
+		if not v then
+			tps.active = false
+		end
+	end, nil, "Soru")
+	UI.keybind(right, "Tecla do TP Spam", tps.key, function(k)
+		tps.key = k
+	end)
+	UI.dropdown(right, "Ativação", { "Segurar", "Alternar" }, tps.mode, function(v)
+		tps.mode = v
+		tps.active = false
+	end)
+	UI.dropdown(right, "Ação", { "Teleporte nativo", "Enviar tecla (jogo)" }, tps.action, function(v)
+		tps.action = v
+	end)
+	UI.keybind(right, "Tecla enviada", tps.sendKey, function(k)
+		tps.sendKey = k
+	end)
+	local intervalInput
+	intervalInput = UI.input(right, "Intervalo (ms)", tps.interval, function(text)
+		tps.interval = num(text, 1, 5000, tps.interval)
+		intervalInput.Set(tps.interval)
+	end)
+	UI.slider(right, "Distância máx. do TP", 10, 300, tps.maxDist, 5, function(v)
+		tps.maxDist = v
+	end)
+end
+
+-- GLITCH -----------------------------------------------------------
+do
+	local left, right = createTab("Glitch")
+
+	UI.section(left, "Glitch")
+	UI.toggle(left, "Glitch ativado", false, function(v)
+		cfg.glideB.enabled = v
+	end, nil, "Glide")
+	UI.slider(left, "Velocidade", 50, 1000, cfg.glideB.speed, 10, function(v)
+		cfg.glideB.speed = v
+	end)
+	UI.slider(left, "Duração (cs)", 1, 100, cfg.glideB.time, 1, function(v)
+		cfg.glideB.time = v
+	end)
+
+	UI.section(right, "Opções")
+	UI.keybind(right, "Tecla", cfg.glideB.key, function(k)
+		cfg.glideB.key = k
+	end)
+	UI.toggle(right, "Manter altura", true, function(v)
+		cfg.glideB.keepHeight = v
+	end)
+end
+
+-- FLY -----------------------------------------------------------------
+do
+	local left, right = createTab("Fly")
+
+	UI.section(left, "Voo")
+	flyToggle = UI.toggle(left, "Fly", false, function(v)
+		flyState.enabled = v
+		if v then
+			if not startFly() then
+				flyState.enabled = false
+				flyToggle.Set(false, true)
+			end
+		else
+			stopFly()
+		end
+	end, nil, "Fly")
+	UI.slider(left, "Velocidade de voo", 10, 300, cfg.fly.speed, 1, function(v)
+		cfg.fly.speed = v
+	end)
+	UI.keybind(left, "Tecla do Fly", cfg.fly.key, function(k)
+		cfg.fly.key = k
+	end)
+
+	UI.section(right, "Extras")
+	UI.toggle(right, "Noclip", false, function(v)
+		cfg.noclip = v
+	end, nil, "Fly")
+	UI.toggle(right, "Sem dano de queda", false, function(v)
+		cfg.noFall = v
+	end, nil, "Fly")
+end
+
+-- MACRO ---------------------------------------------------------------
+do
+	local left, right = createTab("Macro")
+	local current = 1
+	local function cm()
+		return macros[current]
+	end
+
+	local wEnabled, wKey, wMode, wLoops, wCycle, wSpeed, wJitter, stepList
+
+	local function refreshList(sel)
+		local texts = {}
+		for i, st in ipairs(cm().steps) do
+			texts[i] = describeStep(i, st)
+		end
+		stepList.Set(texts, sel)
+	end
+
+	local function loadMacro()
+		local m = cm()
+		wEnabled.Set(m.enabled, true)
+		wKey.Set(m.key)
+		wMode.Set(m.mode)
+		wLoops.Set(m.loops, true)
+		wCycle.Set(m.cycleDelay)
+		wSpeed.Set(m.speed, true)
+		wJitter.Set(m.jitter)
+		refreshList(nil)
+	end
+
+	-- ESQUERDA: configuração do macro ------------------------------------
+	UI.section(left, "Macro")
+	local names = {}
+	for i = 1, MACRO_COUNT do
+		names[i] = "Macro " .. i
+	end
+	UI.dropdown(left, "Macro", names, names[1], function(v)
+		current = tonumber(string.match(v, "%d+")) or 1
+		loadMacro()
+	end)
+	wEnabled = UI.toggle(left, "Macro ativado", false, function(v)
+		cm().enabled = v
+		if not v then
+			stopMacro(cm())
+		end
+	end, nil, "Macro")
+	wKey = UI.keybind(left, "Tecla de ativação", macros[1].key, function(k)
+		cm().key = k
+	end)
+	wMode = UI.dropdown(left, "Modo", { "Segurar", "Alternar", "Uma vez" }, "Segurar", function(v)
+		cm().mode = v
+	end)
+	wLoops = UI.slider(left, "Repetições (0 = infinito)", 0, 100, 0, 1, function(v)
+		cm().loops = v
+	end)
+	wCycle = UI.input(left, "Pausa ciclo (ms)", 0, function(text)
+		local v = num(text, 0, 600000, cm().cycleDelay)
+		cm().cycleDelay = v
+		wCycle.Set(v)
+	end)
+	wSpeed = UI.slider(left, "Velocidade (%)", 25, 400, 100, 5, function(v)
+		cm().speed = v
+	end)
+	wJitter = UI.input(left, "Variação (ms)", 0, function(text)
+		local v = num(text, 0, 5000, cm().jitter)
+		cm().jitter = v
+		wJitter.Set(v)
+	end)
+
+	UI.section(left, "Gravação")
+	UI.toggle(left, "Gravar macro", false, function(v)
+		if v then
+			recorder.on = true
+			recorder.events = {}
+			recorder.downs = {}
+			recorder.target = current
+			notify("Gravando: aperte as teclas e desligue o botão")
+		else
+			recorder.on = false
+			local added = buildStepsFromEvents(recorder.events)
+			local m = macros[recorder.target]
+			for _, st in ipairs(added) do
+				table.insert(m.steps, st)
+			end
+			if recorder.target == current then
+				refreshList(nil)
+			end
+			notify(#added .. " passos gravados no Macro " .. recorder.target)
+		end
+	end, nil, "Macro")
+
+	-- DIREITA: passos -----------------------------------------------------
+	UI.section(right, "Passos")
+	stepList = UI.listBox(right, 150)
+	UI.button(right, "Remover selecionado", function()
+		local i = stepList.Get()
+		if i then
+			table.remove(cm().steps, i)
+			refreshList(nil)
+		end
+	end)
+	UI.button(right, "Subir passo", function()
+		local i, steps = stepList.Get(), cm().steps
+		if i and i > 1 then
+			steps[i], steps[i - 1] = steps[i - 1], steps[i]
+			refreshList(i - 1)
+		end
+	end)
+	UI.button(right, "Descer passo", function()
+		local i, steps = stepList.Get(), cm().steps
+		if i and i < #steps then
+			steps[i], steps[i + 1] = steps[i + 1], steps[i]
+			refreshList(i + 1)
+		end
+	end)
+	UI.button(right, "Limpar todos os passos", function()
+		table.clear(cm().steps)
+		refreshList(nil)
+	end)
+
+	UI.section(right, "Adicionar passo")
+	local actionNames = {}
+	for _, a in ipairs(ACTIONS) do
+		table.insert(actionNames, a.name)
+	end
+	local aType = UI.dropdown(right, "Ação", actionNames, "Tecla")
+	local aKey = UI.keybind(right, "Tecla", Enum.KeyCode.R)
+	local aHold = UI.input(right, "Segurar (ms)", 30)
+	local aDelay = UI.input(right, "Esperar após (ms)", 50)
+	local aCount = UI.input(right, "Repetições (Spam)", 10)
+	UI.button(right, "Adicionar passo", function()
+		local def
+		for _, a in ipairs(ACTIONS) do
+			if a.name == aType.Get() then
+				def = a
+			end
+		end
+		if not def then
+			return
+		end
+		table.insert(cm().steps, {
+			type = def.type,
+			btn = def.btn,
+			key = aKey.Get(),
+			hold = num(aHold.Get(), 0, 600000, 30),
+			delay = num(aDelay.Get(), 0, 600000, 50),
+			count = math.floor(num(aCount.Get(), 1, 500, 10)),
+		})
+		refreshList(#cm().steps)
+	end)
+	UI.button(right, "Testar macro agora", function()
+		local m = cm()
+		if m.running then
+			stopMacro(m)
+		else
+			startMacro(m, math.max(1, m.loops))
+		end
+	end)
+end
+
+-- ESP -----------------------------------------------------------------
+do
+	local left, right = createTab("ESP")
+
+	UI.section(left, "Jogadores")
+	UI.toggle(left, "ESP ativado", false, function(v)
+		esp.on = v
+	end, nil, "ESP")
+	UI.toggle(left, "Mostrar nomes", false, function(v)
+		esp.names = v
+	end)
+	UI.toggle(left, "Mostrar distância", false, function(v)
+		esp.dist = v
+	end)
+	UI.toggle(left, "Mostrar vida", false, function(v)
+		esp.health = v
+	end)
+
+	UI.section(right, "Visual")
+	UI.slider(right, "Distância máxima", 100, 3000, esp.maxDist, 50, function(v)
+		esp.maxDist = v
+	end)
+	UI.dropdown(right, "Estilo", { "Contorno", "Caixa", "Preenchido" }, esp.style, function(v)
+		esp.style = v
+	end)
+	UI.toggle(right, "Ignorar meu time", true, function(v)
+		esp.ignoreTeam = v
+	end)
+end
+
+-- SETTINGS ------------------------------------------------------------
+do
+	local left, right = createTab("Settings")
+
+	UI.section(left, "Aparência")
+	UI.colors(left, "Cor do tema", {
+		Color3.fromRGB(56, 132, 255),
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(0, 200, 255),
+		Color3.fromRGB(70, 200, 120),
+		Color3.fromRGB(255, 150, 60),
+		Color3.fromRGB(240, 70, 80),
+	})
+	local transparency = UI.slider(left, "Transparência da janela", 0, 60, 0, 1, function(v)
+		window.BackgroundTransparency = v / 100
+	end)
+	local scale = UI.slider(left, "Tamanho da interface", 70, 130, 100, 5, function(v)
+		uiScale.Scale = v / 100
+	end)
+
+	UI.section(right, "Geral")
+	UI.keybind(right, "Abrir/Fechar painel", toggleKey, function(k)
+		toggleKey = k
+	end)
+	UI.toggle(right, "Notificações", true, function(v)
+		notificationsEnabled = v
+	end)
+	UI.button(right, "Resetar aparência", function()
+		setAccent(DEFAULT_ACCENT)
+		transparency.Set(0)
+		scale.Set(100)
+		notify("Aparência resetada")
+	end)
+end
+
+----------------------------------------------------------------------
+-- INÍCIO
+----------------------------------------------------------------------
+-- BOLINHA (aparece quando o painel está escondido) --------------------
+local BUBBLE_SIZE = 60
+
+local bubble = new("TextButton", {
+	Name = "Bolinha",
+	Size = UDim2.fromOffset(BUBBLE_SIZE, BUBBLE_SIZE),
+	Position = UDim2.new(1, -90, 0.5, -BUBBLE_SIZE / 2),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	Text = "",
+	AutoButtonColor = false,
+	Visible = false,
+	ZIndex = 150,
+}, gui)
+corner(bubble, BUBBLE_SIZE / 2)
+stroke(bubble, Color3.new(1, 1, 1), 2)
+local bubbleScale = new("UIScale", { Scale = 1 }, bubble)
+
+if LOGO_IMAGE ~= "" then
+	-- A imagem ocupa a bolinha inteira e é cortada em círculo.
+	-- Se as pontas da logo ficarem cortadas, diminua o Size (ex.: 0.9) e centralize.
+	local logo = new("ImageLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Image = LOGO_IMAGE,
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 151,
+	}, bubble)
+	corner(logo, BUBBLE_SIZE / 2)
+else
+	new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "SW",
+		TextColor3 = Color3.new(1, 1, 1),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		ZIndex = 151,
+	}, bubble)
+end
+
+local function showPanel()
+	closeDropdown()
+	bubble.Visible = false
+	window.Visible = true
+end
+
+local function hidePanel()
+	closeDropdown()
+	window.Visible = false
+	bubbleScale.Scale = 0
+	bubble.Visible = true
+	tween(bubbleScale, 0.2, { Scale = 1 })
+end
+
+-- Arrastar a bolinha; um clique simples (sem arrastar) reabre o painel
+do
+	local dragging, moved = false, false
+	local dragStart, startAbs
+
+	bubble.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging, moved = true, false
+			dragStart = input.Position
+			startAbs = bubble.AbsolutePosition
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			if d.Magnitude > 6 then
+				moved = true
+			end
+			if moved then
+				local screen = gui.AbsoluteSize
+				local x = math.clamp(startAbs.X + d.X, 0, screen.X - BUBBLE_SIZE)
+				local y = math.clamp(startAbs.Y + d.Y, 0, screen.Y - BUBBLE_SIZE)
+				bubble.Position = UDim2.fromOffset(x, y)
+			end
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if dragging and isPointer(input) then
+			dragging = false
+			if not moved then
+				showPanel()
+			end
+		end
+	end)
+end
+
+closeButton.MouseButton1Click:Connect(hidePanel)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if input.KeyCode == toggleKey then
+		if window.Visible then
+			hidePanel()
+		else
+			showPanel()
+		end
+	end
+end)
+
+task.wait() -- espera o layout calcular as posições das abas
+selectTab("PVP")
+notify("Painel carregado")
