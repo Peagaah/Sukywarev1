@@ -211,7 +211,7 @@ SubmitButton.MouseButton1Click:Connect(function()
         ScreenGui:Destroy()
         
         -- Executa o seu script do GitHub
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Peagaah/SukyWare/refs/heads/main/Script.txt"))()
+        https://raw.githubusercontent.com/Peagaah/Sukywarev1/refs/heads/main/Script.txt
         
     else
         SubmitButton.Text = "Key Incorreta!"
