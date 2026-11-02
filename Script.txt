@@ -1,10 +1,15 @@
 --[[
-	SukyWare (VERSÃO DE TESTE, UM SCRIPT SÓ)
+	SukyWare (VERSÃO DE TESTE, UM SCRIPT SÓ) + ANIMAÇÕES
 
 	Coloque como LocalScript em StarterPlayerScripts. Não precisa de servidor.
 	Speed e Soru são aplicados direto pelo cliente (só para testar no Studio).
 	Para o sorteio de verdade, use a versão com AdminServer (mais segura).
 	RightShift = mostrar/esconder (muda na aba Settings)
+
+	Animações (tudo configurável em Settings > Animações):
+	  - Abrir/fechar com zoom + fade (TweenService)
+	  - Fade entre abas
+	  - Hover em botões, toggles, sliders, inputs, dropdowns, keybinds e listas
 
 	Componentes disponíveis (use em qualquer coluna):
 	  UI.section(col, texto)
@@ -41,6 +46,26 @@ local DEFAULT_ACCENT = Color3.fromRGB(56, 132, 255)
 local ACCENT = DEFAULT_ACCENT
 local toggleKey = Enum.KeyCode.RightShift
 local notificationsEnabled = true
+
+-- Configuração das animações (controlada na aba Settings)
+local anim = {
+	enabled = true, -- animar abrir/fechar
+	style = "Back", -- Back, Quart, Quad, Sine, Exponential
+	openTime = 0.18, -- segundos
+	openScale = 0.8, -- escala inicial (0.8 = 80%)
+	tabFade = true, -- fade ao trocar de aba
+	tabFadeTime = 0.15,
+	hover = true, -- efeito hover
+	hoverStrength = 8, -- quanto clareia (0-255)
+}
+local ANIM_DEFAULTS = table.clone(anim)
+
+-- Declaradas aqui no topo porque são usadas antes de serem definidas
+local showPanel, hidePanel
+local panelOpen, closing = false, false
+local hideToken = 0
+local userScale = 1 -- tamanho escolhido em Settings (a animação multiplica por ele)
+local currentTab
 
 -- Logo da bolinha: suba a imagem no Roblox e cole o ID aqui.
 -- Exemplo: "rbxassetid://1234567890"  (enquanto for "", a bolinha mostra o texto "SW")
@@ -99,6 +124,39 @@ local function tween(inst, time, props)
 	TweenService:Create(inst, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
 
+local EASING = {
+	Back = Enum.EasingStyle.Back,
+	Quart = Enum.EasingStyle.Quart,
+	Quad = Enum.EasingStyle.Quad,
+	Sine = Enum.EasingStyle.Sine,
+	Exponential = Enum.EasingStyle.Exponential,
+}
+
+local function tweenEx(inst, time, props, style, dir)
+	local tw = TweenService:Create(inst, TweenInfo.new(time, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+	tw:Play()
+	return tw
+end
+
+local function lighten(c, amount)
+	local a = amount / 255
+	return Color3.new(math.min(c.R + a, 1), math.min(c.G + a, 1), math.min(c.B + a, 1))
+end
+
+-- Hover genérico: clareia a propriedade `prop` de `target` enquanto o mouse
+-- estiver sobre `hitbox` (se não passar hitbox, usa o próprio target).
+local function addHover(target, prop, base, hitbox)
+	hitbox = hitbox or target
+	hitbox.MouseEnter:Connect(function()
+		if anim.hover then
+			tween(target, 0.12, { [prop] = lighten(base, anim.hoverStrength) })
+		end
+	end)
+	hitbox.MouseLeave:Connect(function()
+		tween(target, 0.12, { [prop] = base })
+	end)
+end
+
 local function isPointer(input)
 	return input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch
@@ -140,12 +198,14 @@ local gui = new("ScreenGui", {
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, player:WaitForChild("PlayerGui"))
 
-local window = new("Frame", {
+-- CanvasGroup: permite fazer fade em tudo de uma vez com GroupTransparency
+local window = new("CanvasGroup", {
 	Size = UDim2.fromOffset(660, 410),
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	BackgroundColor3 = THEME.window,
 	BorderSizePixel = 0,
+	GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
 }, gui)
 corner(window, 12)
 stroke(window, THEME.line, 1)
@@ -315,10 +375,28 @@ end
 ----------------------------------------------------------------------
 local tabs = {}
 
-local function selectTab(name)
+local function selectTab(name, instant)
+	local changed = currentTab ~= name
+	currentTab = name
 	for tabName, t in pairs(tabs) do
 		local active = (tabName == name)
-		t.page.Visible = active
+		if active then
+			if changed and anim.tabFade and not instant then
+				t.page.GroupTransparency = 1
+				t.page.Position = UDim2.fromOffset(0, 8)
+				t.page.Visible = true
+				tweenEx(t.page, anim.tabFadeTime, {
+					GroupTransparency = 0,
+					Position = UDim2.fromOffset(0, 0),
+				}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			else
+				t.page.GroupTransparency = 0
+				t.page.Position = UDim2.fromOffset(0, 0)
+				t.page.Visible = true
+			end
+		else
+			t.page.Visible = false
+		end
 		tween(t.button, 0.15, { TextColor3 = active and THEME.text or THEME.muted })
 		if active then
 			local x = (t.button.AbsolutePosition.X - header.AbsolutePosition.X) / uiScale.Scale
@@ -366,9 +444,23 @@ local function createTab(name)
 	}, tabBar)
 	new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, button)
 
-	local page = new("Frame", {
+	-- Hover da aba (só nas abas inativas)
+	button.MouseEnter:Connect(function()
+		if anim.hover and currentTab ~= name then
+			tween(button, 0.12, { TextColor3 = lighten(THEME.muted, 60) })
+		end
+	end)
+	button.MouseLeave:Connect(function()
+		if currentTab ~= name then
+			tween(button, 0.12, { TextColor3 = THEME.muted })
+		end
+	end)
+
+	-- CanvasGroup: permite o fade de todos os elementos da aba de uma vez
+	local page = new("CanvasGroup", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
+		GroupTransparency = 0,
 		Visible = false,
 	}, body)
 	new("Frame", {
@@ -446,7 +538,9 @@ function UI.toggle(col, text, default, callback, hint, perm)
 		BorderSizePixel = 0,
 	}, row)
 	corner(ring, 10)
-	stroke(ring, THEME.off, 1.5)
+	local ringStroke = stroke(ring, THEME.off, 1.5)
+	addHover(ringStroke, "Color", THEME.off, row)
+	addHover(ring, "BackgroundColor3", THEME.input, row)
 
 	local dot = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -537,7 +631,8 @@ function UI.slider(col, text, min, max, default, step, callback)
 		BackgroundColor3 = Color3.new(1, 1, 1),
 		BorderSizePixel = 0,
 	}, track)
-	corner(knob, 6)
+	-- círculo perfeito em qualquer tamanho (a bolinha cresce no hover)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
 
 	local function render()
 		local rel = (value - min) / (max - min)
@@ -562,11 +657,27 @@ function UI.slider(col, text, min, max, default, step, callback)
 		apply(math.floor((min + (max - min) * rel) / step + 0.5) * step)
 	end
 
-	local dragging = false
+	local hovering, dragging = false, false
+
+	local function refreshKnob()
+		local big = anim.hover and (hovering or dragging)
+		tween(knob, 0.1, { Size = big and UDim2.fromOffset(16, 16) or UDim2.fromOffset(12, 12) })
+		tween(track, 0.1, { BackgroundColor3 = big and lighten(THEME.off, anim.hoverStrength) or THEME.off })
+	end
+
+	hit.MouseEnter:Connect(function()
+		hovering = true
+		refreshKnob()
+	end)
+	hit.MouseLeave:Connect(function()
+		hovering = false
+		refreshKnob()
+	end)
 	hit.InputBegan:Connect(function(input)
 		if isPointer(input) then
 			dragging = true
 			setFromX(input.Position.X)
+			refreshKnob()
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
@@ -576,8 +687,9 @@ function UI.slider(col, text, min, max, default, step, callback)
 		end
 	end)
 	UserInputService.InputEnded:Connect(function(input)
-		if isPointer(input) then
+		if dragging and isPointer(input) then
 			dragging = false
+			refreshKnob()
 		end
 	end)
 
@@ -604,6 +716,7 @@ function UI.input(col, text, default, callback)
 		ClearTextOnFocus = false,
 	}, row)
 	corner(box, 6)
+	addHover(box, "BackgroundColor3", THEME.input)
 	local st = stroke(box, THEME.line, 1)
 	box.Focused:Connect(function()
 		tween(st, 0.15, { Color = ACCENT })
@@ -656,6 +769,7 @@ function UI.dropdown(col, text, options, default, callback)
 		AutoButtonColor = false,
 	}, row)
 	corner(box, 6)
+	addHover(box, "BackgroundColor3", THEME.input)
 	stroke(box, THEME.line, 1)
 	new("TextLabel", {
 		Size = UDim2.fromOffset(20, 26),
@@ -669,7 +783,7 @@ function UI.dropdown(col, text, options, default, callback)
 
 	box.MouseButton1Click:Connect(function()
 		closeDropdown()
-		local s = uiScale.Scale
+		local s = userScale
 		local itemH = 26 * s
 		local list = new("Frame", {
 			Size = UDim2.fromOffset(box.AbsoluteSize.X, itemH * #options + 4 * s),
@@ -738,6 +852,7 @@ function UI.keybind(col, text, defaultKey, callback)
 		AutoButtonColor = false,
 	}, row)
 	corner(box, 6)
+	addHover(box, "BackgroundColor3", THEME.input)
 	local st = stroke(box, THEME.line, 1)
 
 	box.MouseButton1Click:Connect(function()
@@ -780,12 +895,7 @@ function UI.button(col, text, callback)
 	}, col)
 	corner(b, 6)
 	stroke(b, THEME.line, 1)
-	b.MouseEnter:Connect(function()
-		tween(b, 0.12, { BackgroundColor3 = THEME.row })
-	end)
-	b.MouseLeave:Connect(function()
-		tween(b, 0.12, { BackgroundColor3 = THEME.input })
-	end)
+	addHover(b, "BackgroundColor3", THEME.input)
 	b.MouseButton1Click:Connect(function()
 		if callback then
 			task.spawn(callback)
@@ -836,6 +946,7 @@ function UI.playerList(col, callback)
 					AutoButtonColor = false,
 				}, list)
 				corner(b, 6)
+				addHover(b, "BackgroundColor3", THEME.row)
 				local st = stroke(b, ACCENT, 1.5)
 				bindAccent(st, "Color")
 				st.Transparency = (selected == p) and 0 or 1
@@ -956,6 +1067,16 @@ function UI.listBox(col, height, onSelect)
 				LayoutOrder = i,
 			}, list)
 			corner(b, 5)
+			b.MouseEnter:Connect(function()
+				if anim.hover and selected ~= i then
+					tween(b, 0.1, { BackgroundTransparency = 0.6 })
+				end
+			end)
+			b.MouseLeave:Connect(function()
+				if selected ~= i then
+					tween(b, 0.1, { BackgroundTransparency = 1 })
+				end
+			end)
 			b.MouseButton1Click:Connect(function()
 				selected = if selected == i then nil else i
 				render()
@@ -2412,7 +2533,10 @@ do
 		window.BackgroundTransparency = v / 100
 	end)
 	local scale = UI.slider(left, "Tamanho da interface", 70, 130, 100, 5, function(v)
-		uiScale.Scale = v / 100
+		userScale = v / 100
+		if panelOpen and not closing then
+			uiScale.Scale = userScale
+		end
 	end)
 
 	UI.section(right, "Geral")
@@ -2427,6 +2551,54 @@ do
 		transparency.Set(0)
 		scale.Set(100)
 		notify("Aparência resetada")
+	end)
+
+	UI.section(right, "Animações")
+	local wAnim = UI.toggle(right, "Animar abrir/fechar", anim.enabled, function(v)
+		anim.enabled = v
+	end)
+	local wStyle = UI.dropdown(right, "Estilo", { "Back", "Quart", "Quad", "Sine", "Exponential" }, anim.style, function(v)
+		anim.style = v
+	end)
+	local wTime = UI.slider(right, "Duração (s)", 0.05, 0.5, anim.openTime, 0.01, function(v)
+		anim.openTime = v
+	end)
+	local wScale = UI.slider(right, "Escala inicial (%)", 50, 95, anim.openScale * 100, 1, function(v)
+		anim.openScale = v / 100
+	end)
+	local wTabFade = UI.toggle(right, "Fade entre abas", anim.tabFade, function(v)
+		anim.tabFade = v
+	end)
+	local wTabTime = UI.slider(right, "Duração do fade (s)", 0.05, 0.4, anim.tabFadeTime, 0.01, function(v)
+		anim.tabFadeTime = v
+	end)
+	local wHover = UI.toggle(right, "Efeito hover", anim.hover, function(v)
+		anim.hover = v
+	end)
+	local wHoverStr = UI.slider(right, "Intensidade do hover", 2, 30, anim.hoverStrength, 1, function(v)
+		anim.hoverStrength = v
+	end)
+	UI.button(right, "Testar animação", function()
+		if not panelOpen then
+			return
+		end
+		hidePanel()
+		task.wait(anim.openTime + 0.4)
+		showPanel()
+	end)
+	UI.button(right, "Resetar animações", function()
+		for k, v in pairs(ANIM_DEFAULTS) do
+			anim[k] = v
+		end
+		wAnim.Set(anim.enabled)
+		wStyle.Set(anim.style)
+		wTime.Set(anim.openTime)
+		wScale.Set(anim.openScale * 100)
+		wTabFade.Set(anim.tabFade)
+		wTabTime.Set(anim.tabFadeTime)
+		wHover.Set(anim.hover)
+		wHoverStr.Set(anim.hoverStrength)
+		notify("Animações resetadas")
 	end)
 end
 
@@ -2473,18 +2645,61 @@ else
 	}, bubble)
 end
 
-local function showPanel()
+-- ABRIR / FECHAR COM ANIMAÇÃO -----------------------------------------
+-- (declaradas no topo como locals; aqui só atribuímos)
+function showPanel()
 	closeDropdown()
 	bubble.Visible = false
+	panelOpen = true
 	window.Visible = true
+
+	if not anim.enabled then
+		closing = false
+		window.GroupTransparency = 0
+		uiScale.Scale = userScale
+		return
+	end
+
+	-- Se estava no meio do fechamento, continua de onde está (sem "pulo")
+	if not closing then
+		window.GroupTransparency = 1
+		uiScale.Scale = userScale * anim.openScale
+	end
+	closing = false
+	tweenEx(window, anim.openTime, { GroupTransparency = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	tweenEx(uiScale, anim.openTime, { Scale = userScale }, EASING[anim.style] or Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 end
 
-local function hidePanel()
+function hidePanel()
 	closeDropdown()
-	window.Visible = false
-	bubbleScale.Scale = 0
-	bubble.Visible = true
-	tween(bubbleScale, 0.2, { Scale = 1 })
+	panelOpen = false
+	hideToken += 1
+	local myToken = hideToken
+
+	local function finish()
+		closing = false
+		window.Visible = false
+		window.GroupTransparency = 0
+		uiScale.Scale = userScale
+		bubbleScale.Scale = 0
+		bubble.Visible = true
+		tween(bubbleScale, 0.2, { Scale = 1 })
+	end
+
+	if not anim.enabled then
+		finish()
+		return
+	end
+
+	closing = true
+	tweenEx(window, anim.openTime, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	local tw = tweenEx(uiScale, anim.openTime, { Scale = userScale * anim.openScale }, EASING[anim.style] or Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	tw.Completed:Connect(function(state)
+		-- só finaliza se esse fechamento terminou de verdade e ninguém reabriu no meio
+		if state == Enum.PlaybackState.Completed and myToken == hideToken and closing and not panelOpen then
+			finish()
+		end
+	end)
 end
 
 -- Arrastar a bolinha; um clique simples (sem arrastar) reabre o painel
@@ -2531,7 +2746,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		return
 	end
 	if input.KeyCode == toggleKey then
-		if window.Visible then
+		if panelOpen then
 			hidePanel()
 		else
 			showPanel()
@@ -2540,5 +2755,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 task.wait() -- espera o layout calcular as posições das abas
-selectTab("PVP")
+selectTab("PVP", true) -- true = sem fade na primeira abertura
+showPanel() -- abre com a animação
 notify("Painel carregado")
