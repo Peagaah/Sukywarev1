@@ -6,6 +6,20 @@
 	Para o sorteio de verdade, use a versão com AdminServer (mais segura).
 	RightShift = mostrar/esconder (muda na aba Settings)
 
+	NOVIDADES DESTA VERSÃO
+	  ESP:
+	    - Distância máxima até 20000 studs (range ultra longo)
+	    - Linhas (tracers) para TODOS os players ao mesmo tempo
+	    - Nome (apelido/usuário) e distância em metros ou studs
+	    - Box ESP (contorno do corpo, enxerga através da parede)
+	    - Filtro de time (ignorar aliados)
+	  SORU:
+	    - Direção pela câmera (com ou sem altura / 3D)
+	    - Instant Soru (sem cooldown)
+	    - Soru aéreo contínuo (flutua um instante no ar)
+	    - Rastro: linha, partículas ou ambos (cor, largura e duração)
+	    - Soru no alvo mais próximo na tela (tecla própria)
+
 	Animações (tudo configurável em Settings > Animações):
 	  - Abrir/fechar com zoom + fade (TweenService)
 	  - Fade entre abas
@@ -20,7 +34,7 @@
 	  UI.keybind(col, texto, tecla, callback)
 	  UI.button(col, texto, callback)
 	  UI.playerList(col, callback)
-	  UI.colors(col, texto, cores, callback)
+	  UI.colors(col, texto, cores, callback, aplicaNoTema)
 ]]
 
 local Players = game:GetService("Players")
@@ -983,7 +997,9 @@ function UI.playerList(col, callback)
 	return { Get = function() return selected end }
 end
 
-function UI.colors(col, text, colors, callback)
+-- aplicaNoTema: por padrão (nil/true) a cor clicada vira a cor do tema do painel.
+-- Passe false para usar a paleta só para o callback (ex.: cor do rastro do Soru).
+function UI.colors(col, text, colors, callback, applyTheme)
 	local row = new("Frame", {
 		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundTransparency = 1,
@@ -1000,7 +1016,9 @@ function UI.colors(col, text, colors, callback)
 		}, row)
 		corner(s, 10)
 		s.MouseButton1Click:Connect(function()
-			setAccent(color)
+			if applyTheme ~= false then
+				setAccent(color)
+			end
 			if callback then
 				task.spawn(callback, color)
 			end
@@ -1124,7 +1142,30 @@ local cfg = {
 	jumpForce = 300,
 	noclip = false,
 	noFall = false,
-	soru = { enabled = false, key = Enum.KeyCode.Q, distance = 45, cooldown = 2, trail = true, sound = true, direction = "Movimento", readyAt = 0 },
+	soru = {
+		enabled = false,
+		key = Enum.KeyCode.Q,
+		distance = 45,
+		cooldown = 2,
+		direction = "Câmera", -- "Câmera", "Movimento" ou "Mouse"
+		pitch = true, -- Câmera: usa também a altura (olhar pra cima/baixo = voar pra cima/baixo)
+		instant = false, -- Instant Soru: sem cooldown
+		air = false, -- Soru aéreo contínuo
+		airHover = 0.3, -- segundos flutuando no ar depois do Soru aéreo
+		airUntil = 0,
+		-- efeitos
+		trail = true,
+		trailMode = "Linha", -- "Linha", "Partículas" ou "Ambos"
+		trailColor = Color3.new(1, 1, 1),
+		trailWidth = 1.5,
+		trailTime = 0.4,
+		sound = true,
+		-- Soru no alvo mais próximo
+		targetKey = Enum.KeyCode.Y,
+		targetPlayers = true,
+		targetNpc = true,
+		readyAt = 0,
+	},
 	glideA = { enabled = false, key = Enum.KeyCode.H, speed = 350, time = 20, keepHeight = true, busy = false },
 	glideB = { enabled = false, key = Enum.KeyCode.J, speed = 300, time = 15, keepHeight = true, busy = false },
 	fly = { key = Enum.KeyCode.F, speed = 60 },
@@ -1133,6 +1174,8 @@ local cfg = {
 -- Ponte para os scripts do SEU jogo (skills, silent aim, teclas virtuais).
 local hooks = {
 	FastSkill = false,
+	InstantSoru = false, -- o script do Soru do seu jogo pode ler isto para pular o delay nativo
+	AirSoru = false, -- idem: permitir Soru no ar sem tocar no chão
 }
 shared.SukyWare = hooks
 
@@ -1385,6 +1428,10 @@ local triggerGlideB = makeGlide(cfg.glideB)
 ----------------------------------------------------------------------
 -- SORU (o servidor move o personagem)
 ----------------------------------------------------------------------
+-- Direção do Soru normal (tecla Q):
+--   "Câmera"    = exatamente para onde a câmera aponta (com altura se "pitch" estiver ligado)
+--   "Movimento" = para onde você está andando
+--   "Mouse"     = para o ponto do mundo sob o mouse
 local function getSoruDirection()
 	local _, hum, root = getChar()
 	if not root then
@@ -1394,7 +1441,7 @@ local function getSoruDirection()
 	local dir
 	if cfg.soru.direction == "Câmera" then
 		local l = camera.CFrame.LookVector
-		dir = Vector3.new(l.X, 0, l.Z)
+		dir = cfg.soru.pitch and l or Vector3.new(l.X, 0, l.Z)
 	elseif cfg.soru.direction == "Mouse" then
 		local m = UserInputService:GetMouseLocation()
 		local ray = camera:ViewportPointToRay(m.X, m.Y)
@@ -1420,7 +1467,65 @@ end
 
 local SORU_SOUND_ID = "" -- ex.: "rbxassetid://123456" (vazio = sem som)
 
-local function soruLocal(dir, distance, trail, sound)
+-- Rastro em linha (Part neon que some) e/ou em partículas (ParticleEmitter)
+local function soruEffects(origin, target, dir, travel)
+	local s = cfg.soru
+	local mid = origin:Lerp(target, 0.5)
+	-- se o Soru for quase vertical, o "cima" do CFrame precisa mudar para não dar erro
+	local up = math.abs(dir.Y) > 0.99 and Vector3.xAxis or Vector3.yAxis
+	local cf = CFrame.lookAt(mid, target, up)
+
+	if s.trailMode == "Linha" or s.trailMode == "Ambos" then
+		local part = Instance.new("Part")
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.Material = Enum.Material.Neon
+		part.Color = s.trailColor
+		part.Size = Vector3.new(s.trailWidth, s.trailWidth, travel)
+		part.CFrame = cf
+		part.Parent = workspace
+		TweenService:Create(part, TweenInfo.new(s.trailTime), {
+			Transparency = 1,
+			Size = Vector3.new(0.1, 0.1, travel),
+		}):Play()
+		Debris:AddItem(part, s.trailTime + 0.1)
+	end
+
+	if s.trailMode == "Partículas" or s.trailMode == "Ambos" then
+		local box = Instance.new("Part")
+		box.Anchored = true
+		box.CanCollide = false
+		box.CanQuery = false
+		box.Transparency = 1
+		box.Size = Vector3.new(math.max(s.trailWidth, 1.5), math.max(s.trailWidth, 1.5), travel)
+		box.CFrame = cf
+		box.Parent = workspace
+
+		local em = Instance.new("ParticleEmitter")
+		em.Rate = 0
+		em.Shape = Enum.ParticleEmitterShape.Box
+		em.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+		em.Color = ColorSequence.new(s.trailColor)
+		em.LightEmission = 1
+		em.Lifetime = NumberRange.new(s.trailTime, s.trailTime * 1.5)
+		em.Speed = NumberRange.new(0, 3)
+		em.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, s.trailWidth * 0.7),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		em.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		em.Parent = box
+		em:Emit(math.clamp(math.floor(travel * 2), 10, 200))
+		Debris:AddItem(box, s.trailTime * 1.5 + 0.5)
+	end
+end
+
+local function soruLocal(dir, distance)
+	local s = cfg.soru
 	local char, _, root = getChar()
 	if not root then
 		return
@@ -1433,22 +1538,26 @@ local function soruLocal(dir, distance, trail, sound)
 	local hit = workspace:Raycast(origin, dir * distance, params)
 	local travel = hit and math.max(hit.Distance - 3, 0) or distance
 	local target = origin + dir * travel
-	root.CFrame = CFrame.lookAt(target, target + dir)
 
-	if trail and travel > 1 then
-		local part = Instance.new("Part")
-		part.Anchored = true
-		part.CanCollide = false
-		part.CanQuery = false
-		part.Material = Enum.Material.Neon
-		part.Color = Color3.new(1, 1, 1)
-		part.Size = Vector3.new(1.5, 1.5, travel)
-		part.CFrame = CFrame.lookAt(origin:Lerp(target, 0.5), target)
-		part.Parent = workspace
-		TweenService:Create(part, TweenInfo.new(0.4), { Transparency = 1, Size = Vector3.new(0.1, 0.1, travel) }):Play()
-		Debris:AddItem(part, 0.5)
+	-- O personagem sempre olha na horizontal (evita girar de cabeça pra baixo)
+	local flat = Vector3.new(dir.X, 0, dir.Z)
+	if flat.Magnitude > 0.01 then
+		root.CFrame = CFrame.lookAt(target, target + flat)
+	else
+		root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
 	end
-	if sound and SORU_SOUND_ID ~= "" then
+
+	-- Soru aéreo contínuo: zera a queda e flutua um instante, sem precisar tocar no chão
+	if s.air then
+		s.airUntil = os.clock() + s.airHover
+		local v = root.AssemblyLinearVelocity
+		root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+	end
+
+	if s.trail and travel > 1 then
+		soruEffects(origin, target, dir, travel)
+	end
+	if s.sound and SORU_SOUND_ID ~= "" then
 		local snd = Instance.new("Sound")
 		snd.SoundId = SORU_SOUND_ID
 		snd.Parent = root
@@ -1457,17 +1566,71 @@ local function soruLocal(dir, distance, trail, sound)
 	end
 end
 
+-- Pronto para usar? (Instant Soru ignora o cooldown)
+local function soruReady(force)
+	local s = cfg.soru
+	return force or (s.enabled and (s.instant or os.clock() >= s.readyAt))
+end
+
 local function doSoru(force)
 	local s = cfg.soru
-	if not force and (not s.enabled or os.clock() < s.readyAt) then
+	if not soruReady(force) then
 		return
 	end
 	local dir = getSoruDirection()
 	if not dir then
 		return
 	end
-	s.readyAt = os.clock() + s.cooldown
-	soruLocal(dir, s.distance, s.trail, s.sound)
+	if not s.instant then
+		s.readyAt = os.clock() + s.cooldown
+	end
+	soruLocal(dir, s.distance)
+end
+
+-- Alvo mais próximo que está dentro da tela (campo de visão da câmera)
+local function nearestVisibleTarget()
+	local s = cfg.soru
+	local camera = workspace.CurrentCamera
+	local _, _, myRoot = getChar()
+	if not myRoot then
+		return nil
+	end
+	local best, bestDist
+	for _, e in ipairs(collectTargets(s.targetPlayers, s.targetNpc)) do
+		local _, onScreen = camera:WorldToViewportPoint(e.part.Position)
+		if onScreen then
+			local d = (e.part.Position - myRoot.Position).Magnitude
+			if not bestDist or d < bestDist then
+				best, bestDist = e, d
+			end
+		end
+	end
+	return best, bestDist
+end
+
+local function doSoruTarget()
+	local s = cfg.soru
+	if not soruReady(false) then
+		return
+	end
+	local e, dist = nearestVisibleTarget()
+	if not e then
+		notify("Nenhum alvo na tela")
+		return
+	end
+	local _, _, root = getChar()
+	if not root then
+		return
+	end
+	local d = e.part.Position - root.Position
+	if d.Magnitude < 0.01 then
+		return
+	end
+	if not s.instant then
+		s.readyAt = os.clock() + s.cooldown
+	end
+	-- vai até perto do alvo (para ~4 studs antes), no máximo a distância do Soru
+	soruLocal(d.Unit, math.min(s.distance, math.max(dist - 4, 1)))
 end
 
 ----------------------------------------------------------------------
@@ -1544,6 +1707,15 @@ RunService.Heartbeat:Connect(function()
 			end
 		end
 	end
+
+	-- Soru aéreo: segura a queda por alguns instantes depois de cada Soru
+	if cfg.soru.air and os.clock() < cfg.soru.airUntil then
+		local _, _, root = getChar()
+		if root then
+			local v = root.AssemblyLinearVelocity
+			root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+		end
+	end
 end)
 
 RunService.Stepped:Connect(function()
@@ -1564,8 +1736,33 @@ end)
 ----------------------------------------------------------------------
 -- ESP
 ----------------------------------------------------------------------
-local esp = { on = false, names = false, dist = false, health = false, maxDist = 1000, style = "Contorno", ignoreTeam = true }
+local esp = {
+	on = false,
+	names = false,
+	dist = false,
+	health = false,
+	maxDist = 1000, -- em studs (o slider vai até 20000)
+	style = "Contorno", -- "Contorno", "Preenchido" ou "Nenhum"
+	ignoreTeam = true,
+	box = false, -- Box ESP (contorno do corpo)
+	nameMode = "Apelido", -- "Apelido" (DisplayName) ou "Usuário"
+	unit = "Metros", -- "Metros" ou "Studs"
+	textSize = 13,
+	tracers = false, -- linhas da tela até os jogadores
+	tracerGlobal = true, -- true = linhas para TODOS, ignorando a distância máxima
+	tracerOrigin = "Baixo", -- "Baixo", "Centro" ou "Mouse"
+	tracerThick = 1.5,
+}
 local espObjects = {}
+local tracerLines = {}
+
+-- 1 stud = 0,28 metro
+local function fmtDist(studs)
+	if esp.unit == "Metros" then
+		return string.format("%.1f m", studs * 0.28)
+	end
+	return math.floor(studs) .. " studs"
+end
 
 local function clearEsp(p)
 	local o = espObjects[p]
@@ -1576,6 +1773,14 @@ local function clearEsp(p)
 			end
 		end
 		espObjects[p] = nil
+	end
+end
+
+local function clearTracer(p)
+	local line = tracerLines[p]
+	if line then
+		line:Destroy()
+		tracerLines[p] = nil
 	end
 end
 
@@ -1590,16 +1795,15 @@ local function buildEsp(char)
 		OutlineColor = Color3.new(1, 1, 1),
 		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
 	}, gui)
-	o.box = new("BoxHandleAdornment", {
-		Adornee = root,
-		Size = Vector3.new(4, 6, 2),
-		AlwaysOnTop = true,
-		ZIndex = 1,
-		Transparency = 0.5,
+	-- Box ESP: contorno do corpo inteiro (aparece através das paredes)
+	o.sel = new("SelectionBox", {
+		Adornee = char,
+		LineThickness = 0.04,
+		SurfaceTransparency = 1,
 	}, gui)
 	o.bb = new("BillboardGui", {
 		Adornee = root,
-		Size = UDim2.fromOffset(180, 54),
+		Size = UDim2.fromOffset(200, 70),
 		StudsOffset = Vector3.new(0, 3.8, 0),
 		AlwaysOnTop = true,
 	}, gui)
@@ -1647,18 +1851,19 @@ RunService.Heartbeat:Connect(function()
 				if o then
 					local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
 					local inRange = dist <= esp.maxDist
-					o.hl.Enabled = inRange and esp.style ~= "Caixa"
+					o.hl.Enabled = inRange and esp.style ~= "Nenhum"
 					o.hl.FillColor = ACCENT
 					o.hl.FillTransparency = esp.style == "Preenchido" and 0.5 or 1
-					o.box.Visible = inRange and esp.style == "Caixa"
-					o.box.Color3 = ACCENT
+					o.sel.Visible = inRange and esp.box
+					o.sel.Color3 = ACCENT
 					o.bb.Enabled = inRange and (esp.names or esp.dist or esp.health)
+					o.label.TextSize = esp.textSize
 					local lines = {}
 					if esp.names then
-						table.insert(lines, p.DisplayName)
+						table.insert(lines, esp.nameMode == "Apelido" and p.DisplayName or p.Name)
 					end
 					if esp.dist then
-						table.insert(lines, math.floor(dist) .. " studs")
+						table.insert(lines, fmtDist(dist))
 					end
 					if esp.health then
 						table.insert(lines, math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. " HP")
@@ -1670,7 +1875,76 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
-Players.PlayerRemoving:Connect(clearEsp)
+-- TRACERS: uma linha da tela até CADA jogador, atualizada todo frame ------
+RunService.RenderStepped:Connect(function()
+	if not (esp.on and esp.tracers) then
+		for p in pairs(tracerLines) do
+			clearTracer(p)
+		end
+		return
+	end
+
+	local camera = workspace.CurrentCamera
+	local screen = camera.ViewportSize
+	local origin
+	if esp.tracerOrigin == "Centro" then
+		origin = screen / 2
+	elseif esp.tracerOrigin == "Mouse" then
+		origin = UserInputService:GetMouseLocation()
+	else
+		origin = Vector2.new(screen.X / 2, screen.Y)
+	end
+
+	local _, _, myRoot = getChar()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local char = p.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local sameTeam = esp.ignoreTeam and p.Team ~= nil and p.Team == player.Team
+			local show = hum ~= nil and root ~= nil and hum.Health > 0 and not sameTeam
+			if show and not esp.tracerGlobal then
+				local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
+				show = dist <= esp.maxDist
+			end
+
+			if not show then
+				clearTracer(p)
+			else
+				local line = tracerLines[p]
+				if not line then
+					line = new("Frame", {
+						AnchorPoint = Vector2.new(0.5, 0.5),
+						BorderSizePixel = 0,
+						ZIndex = 0, -- fica atrás do painel
+					}, gui)
+					tracerLines[p] = line
+				end
+
+				local v = camera:WorldToViewportPoint(root.Position)
+				local pt = Vector2.new(v.X, v.Y)
+				if v.Z < 0 then
+					-- jogador atrás da câmera: espelha para a linha apontar para o lado certo
+					pt = origin + (origin - pt)
+				end
+				pt = Vector2.new(math.clamp(pt.X, 0, screen.X), math.clamp(pt.Y, 0, screen.Y))
+
+				local d = pt - origin
+				local len = d.Magnitude
+				line.Visible = len > 1
+				line.Size = UDim2.fromOffset(len, esp.tracerThick)
+				line.Position = UDim2.fromOffset((origin.X + pt.X) / 2, (origin.Y + pt.Y) / 2)
+				line.Rotation = math.deg(math.atan2(d.Y, d.X))
+				line.BackgroundColor3 = ACCENT
+			end
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+	clearEsp(p)
+	clearTracer(p)
+end)
 
 ----------------------------------------------------------------------
 -- TECLAS
@@ -1680,6 +1954,8 @@ local recorder = { on = false, events = {}, downs = {}, target = 1 }
 local function onKeyDown(k)
 	if k == cfg.soru.key then
 		doSoru()
+	elseif k == cfg.soru.targetKey then
+		doSoruTarget()
 	elseif k == cfg.glideA.key then
 		triggerGlideA()
 	elseif k == cfg.glideB.key then
@@ -2228,16 +2504,64 @@ do
 	UI.slider(left, "Cooldown (s)", 0, 10, cfg.soru.cooldown, 0.5, function(v)
 		cfg.soru.cooldown = v
 	end)
+	UI.toggle(left, "Instant Soru (sem cooldown)", cfg.soru.instant, function(v)
+		cfg.soru.instant = v
+		hooks.InstantSoru = v
+	end)
 
-	UI.section(left, "Efeitos")
-	UI.toggle(left, "Rastro", true, function(v)
+	UI.section(left, "Direção")
+	UI.dropdown(left, "Direção", { "Câmera", "Movimento", "Mouse" }, cfg.soru.direction, function(v)
+		cfg.soru.direction = v
+	end)
+	UI.toggle(left, "Seguir altura da câmera (3D)", cfg.soru.pitch, function(v)
+		cfg.soru.pitch = v
+	end)
+
+	UI.section(left, "Soru aéreo")
+	UI.toggle(left, "Soru aéreo contínuo", cfg.soru.air, function(v)
+		cfg.soru.air = v
+		hooks.AirSoru = v
+	end)
+	UI.slider(left, "Flutuar no ar (s)", 0, 1, cfg.soru.airHover, 0.05, function(v)
+		cfg.soru.airHover = v
+	end)
+
+	UI.section(right, "Soru no alvo mais próximo")
+	UI.keybind(right, "Tecla do Soru no alvo", cfg.soru.targetKey, function(k)
+		cfg.soru.targetKey = k
+	end)
+	UI.toggle(right, "Mirar em jogadores", cfg.soru.targetPlayers, function(v)
+		cfg.soru.targetPlayers = v
+	end)
+	UI.toggle(right, "Mirar em NPCs", cfg.soru.targetNpc, function(v)
+		cfg.soru.targetNpc = v
+	end)
+
+	UI.section(right, "Rastro e efeitos")
+	UI.toggle(right, "Rastro", cfg.soru.trail, function(v)
 		cfg.soru.trail = v
 	end)
-	UI.toggle(left, "Som", true, function(v)
-		cfg.soru.sound = v
+	UI.dropdown(right, "Estilo do rastro", { "Linha", "Partículas", "Ambos" }, cfg.soru.trailMode, function(v)
+		cfg.soru.trailMode = v
 	end)
-	UI.dropdown(left, "Direção", { "Movimento", "Câmera", "Mouse" }, cfg.soru.direction, function(v)
-		cfg.soru.direction = v
+	UI.colors(right, "Cor do rastro", {
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(0, 200, 255),
+		Color3.fromRGB(56, 132, 255),
+		Color3.fromRGB(70, 200, 120),
+		Color3.fromRGB(255, 150, 60),
+		Color3.fromRGB(240, 70, 80),
+	}, function(color)
+		cfg.soru.trailColor = color
+	end, false)
+	UI.slider(right, "Largura do rastro", 0.5, 6, cfg.soru.trailWidth, 0.5, function(v)
+		cfg.soru.trailWidth = v
+	end)
+	UI.slider(right, "Duração do rastro (s)", 0.1, 2, cfg.soru.trailTime, 0.1, function(v)
+		cfg.soru.trailTime = v
+	end)
+	UI.toggle(right, "Som", cfg.soru.sound, function(v)
+		cfg.soru.sound = v
 	end)
 
 	UI.section(right, "TP Spam")
@@ -2503,16 +2827,44 @@ do
 	UI.toggle(left, "Mostrar vida", false, function(v)
 		esp.health = v
 	end)
+	UI.toggle(left, "Box ESP (caixa no corpo)", esp.box, function(v)
+		esp.box = v
+	end)
+
+	UI.section(left, "Linhas (Tracers)")
+	UI.toggle(left, "Linhas até os jogadores", esp.tracers, function(v)
+		esp.tracers = v
+	end)
+	UI.toggle(left, "Linhas para TODOS (sem limite)", esp.tracerGlobal, function(v)
+		esp.tracerGlobal = v
+	end)
+	UI.dropdown(left, "Origem da linha", { "Baixo", "Centro", "Mouse" }, esp.tracerOrigin, function(v)
+		esp.tracerOrigin = v
+	end)
+	UI.slider(left, "Espessura da linha", 1, 5, esp.tracerThick, 0.5, function(v)
+		esp.tracerThick = v
+	end)
 
 	UI.section(right, "Visual")
-	UI.slider(right, "Distância máxima", 100, 3000, esp.maxDist, 50, function(v)
+	UI.slider(right, "Distância máxima (studs)", 100, 20000, esp.maxDist, 100, function(v)
 		esp.maxDist = v
 	end)
-	UI.dropdown(right, "Estilo", { "Contorno", "Caixa", "Preenchido" }, esp.style, function(v)
+	UI.dropdown(right, "Estilo", { "Contorno", "Preenchido", "Nenhum" }, esp.style, function(v)
 		esp.style = v
 	end)
 	UI.toggle(right, "Ignorar meu time", true, function(v)
 		esp.ignoreTeam = v
+	end)
+
+	UI.section(right, "Texto")
+	UI.dropdown(right, "Nome", { "Apelido", "Usuário" }, esp.nameMode, function(v)
+		esp.nameMode = v
+	end)
+	UI.dropdown(right, "Unidade", { "Metros", "Studs" }, esp.unit, function(v)
+		esp.unit = v
+	end)
+	UI.slider(right, "Tamanho do texto", 10, 22, esp.textSize, 1, function(v)
+		esp.textSize = v
 	end)
 end
 
