@@ -1,6 +1,4 @@
---// SukyWare V2 - Key System UI (Multi-Keys Otimizado)
---// Adicione ou remova keys facilmente na tabela abaixo
-
+--// SukyWare V2 - Key System UI (Limpo e Otimizado)
 local ValidKeys = {
     "Teste123",
     "SukyKey2026",
@@ -211,8 +209,14 @@ SubmitButton.MouseButton1Click:Connect(function()
         -- Fecha a UI de Key
         ScreenGui:Destroy()
         
-        -- Executa o seu script do GitHub
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Peagaah/SukyWare/refs/heads/main/Script.txt"))()
+        -- Executa o seu script do GitHub com segurança
+        local success, err = pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/Peagaah/SukyWare/refs/heads/main/Script.txt"))()
+        end)
+        
+        if not success then
+            warn("Erro ao carregar o script do GitHub: " .. tostring(err))
+        end
         
     else
         SubmitButton.Text = "Key Incorreta!"
