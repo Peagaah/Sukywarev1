@@ -1,5 +1,5 @@
 --[[
-	SukyWare (VERSÃO DE TESTE, UM SCRIPT SÓ) + ANIMAÇÕES
+	SukyWare (VERSÃO DE TESTE, UM SCRIPT SÓ) + ANIMAÇÕES + DASH + AUTO-SAVE
 
 	Coloque como LocalScript em StarterPlayerScripts. Não precisa de servidor.
 	Speed e Soru são aplicados direto pelo cliente (só para testar no Studio).
@@ -7,6 +7,26 @@
 	RightShift = mostrar/esconder (muda na aba Settings)
 
 	NOVIDADES DESTA VERSÃO
+	  GLITCH > DASH (CFrame):
+	    - Toggle para ligar/desligar
+	    - Tecla configurável (padrão F2): impulso rápido para a frente,
+	      na direção da câmera, sem atravessar paredes
+	    - Slider de distância
+	  SETTINGS > PERFIL (AUTO-SAVE EM JSON):
+	    - Save Config: salva todos os toggles, sliders, inputs, dropdowns,
+	      teclas, cor do tema e cor do rastro do Soru
+	    - Load Config: carrega manualmente
+	    - Auto-Load Settings: ao executar o script, restaura tudo sozinho
+	    - Usa writefile/readfile/isfile (só existem em executores; se não
+	      existirem, o painel avisa e continua funcionando normalmente)
+	    - Arquivo: SukyWare/config.json
+	    - Os passos dos Macros NÃO são salvos
+	  FLY:
+	    - Voo suave (aceleração/frenagem com suavidade ajustável)
+	    - Velocidade de 10 a 200
+	    - Controle vertical: "Teclas" (Espaço sobe / Ctrl desce) ou "Câmera"
+	    - Tecla do Fly configurável
+	    - Noclip e Pulo infinito
 	  ESP:
 	    - Distância máxima até 20000 studs (range ultra longo)
 	    - Linhas (tracers) para TODOS os players ao mesmo tempo
@@ -35,6 +55,9 @@
 	  UI.button(col, texto, callback)
 	  UI.playerList(col, callback)
 	  UI.colors(col, texto, cores, callback, aplicaNoTema)
+
+	Todo componente criado dentro de uma aba (menos a Macro) entra sozinho
+	no Save/Load, usando "Aba/Texto" como chave.
 ]]
 
 local Players = game:GetService("Players")
@@ -388,6 +411,7 @@ end
 -- ABAS
 ----------------------------------------------------------------------
 local tabs = {}
+local buildingTab -- nome da aba que está sendo montada (usado pelo Save/Load)
 
 local function selectTab(name, instant)
 	local changed = currentTab ~= name
@@ -444,6 +468,7 @@ end
 local tabCount = 0
 local function createTab(name)
 	tabCount += 1
+	buildingTab = name
 	local button = new("TextButton", {
 		Size = UDim2.new(0, 0, 1, 0),
 		AutomaticSize = Enum.AutomaticSize.X,
@@ -492,6 +517,27 @@ local function createTab(name)
 		selectTab(name)
 	end)
 	return left, right
+end
+
+----------------------------------------------------------------------
+-- REGISTRO PARA SAVE/LOAD
+-- Cada componente criado dentro de uma aba (menos a Macro) se registra
+-- aqui com a chave "Aba/Texto". O Save/Load percorre esta lista.
+----------------------------------------------------------------------
+local saveRegistry, saveOrder = {}, {}
+local function register(kind, text, widget)
+	if not buildingTab or buildingTab == "Macro" then
+		return widget
+	end
+	local base = buildingTab .. "/" .. text
+	local key, n = base, 1
+	while saveRegistry[key] do
+		n += 1
+		key = base .. "#" .. n
+	end
+	saveRegistry[key] = { kind = kind, w = widget }
+	table.insert(saveOrder, key)
+	return widget
 end
 
 ----------------------------------------------------------------------
@@ -596,7 +642,7 @@ function UI.toggle(col, text, default, callback, hint, perm)
 	row.MouseButton1Click:Connect(function()
 		set(not on)
 	end)
-	return { Set = set, Get = function() return on end }
+	return register("toggle", text, { Set = set, Get = function() return on end })
 end
 
 function UI.slider(col, text, min, max, default, step, callback)
@@ -708,7 +754,7 @@ function UI.slider(col, text, min, max, default, step, callback)
 	end)
 
 	render()
-	return { Set = apply, Get = function() return value end }
+	return register("slider", text, { Set = apply, Get = function() return value end })
 end
 
 function UI.input(col, text, default, callback)
@@ -741,7 +787,16 @@ function UI.input(col, text, default, callback)
 			task.spawn(callback, box.Text)
 		end
 	end)
-	return { Get = function() return box.Text end, Set = function(v) box.Text = tostring(v) end }
+	-- Set(valor, true) também dispara o callback (usado pelo Load Config)
+	return register("input", text, {
+		Get = function() return box.Text end,
+		Set = function(v, fire)
+			box.Text = tostring(v)
+			if fire and callback then
+				task.spawn(callback, box.Text)
+			end
+		end,
+	})
 end
 
 -- Dropdown (a lista fica no nível do ScreenGui para não ser cortada pela coluna)
@@ -838,13 +893,16 @@ function UI.dropdown(col, text, options, default, callback)
 		openList = list
 		catcher.Visible = true
 	end)
-	return {
+	return register("dropdown", text, {
 		Get = function() return current end,
-		Set = function(v)
+		Set = function(v, fire)
 			current = v
 			box.Text = v
+			if fire and callback then
+				task.spawn(callback, v)
+			end
 		end,
-	}
+	})
 end
 
 function UI.keybind(col, text, defaultKey, callback)
@@ -887,13 +945,16 @@ function UI.keybind(col, text, defaultKey, callback)
 			end
 		end)
 	end)
-	return {
+	return register("keybind", text, {
 		Get = function() return key end,
-		Set = function(k)
+		Set = function(k, fire)
 			key = k
 			box.Text = k.Name
+			if fire and callback then
+				task.spawn(callback, k)
+			end
 		end,
-	}
+	})
 end
 
 function UI.button(col, text, callback)
@@ -1141,7 +1202,6 @@ local cfg = {
 	walkSpeed = 80,
 	jumpForce = 300,
 	noclip = false,
-	noFall = false,
 	soru = {
 		enabled = false,
 		key = Enum.KeyCode.Q,
@@ -1168,7 +1228,15 @@ local cfg = {
 	},
 	glideA = { enabled = false, key = Enum.KeyCode.H, speed = 350, time = 20, keepHeight = true, busy = false },
 	glideB = { enabled = false, key = Enum.KeyCode.J, speed = 300, time = 15, keepHeight = true, busy = false },
-	fly = { key = Enum.KeyCode.F, speed = 60 },
+	dash = { enabled = false, key = Enum.KeyCode.F2, distance = 30 }, -- Dash (CFrame) da aba Glitch
+	fly = {
+		key = Enum.KeyCode.F,
+		speed = 60,
+		vertical = "Teclas", -- "Teclas" (Espaço/Ctrl) ou "Câmera" (sobe/desce olhando pra cima/baixo)
+		smooth = 50, -- 0 = resposta instantânea ... 100 = bem deslizante
+		infJump = false,
+		lastJump = 0,
+	},
 }
 
 -- Ponte para os scripts do SEU jogo (skills, silent aim, teclas virtuais).
@@ -1425,6 +1493,30 @@ end
 local triggerGlideA = makeGlide(cfg.glideA)
 local triggerGlideB = makeGlide(cfg.glideB)
 
+-- DASH (CFrame para a frente, na direção da câmera) -------------------
+local function doDash()
+	local d = cfg.dash
+	if not d.enabled or not hasPerm("Glide") then
+		return
+	end
+	local char, _, root = getChar()
+	if not root then
+		return
+	end
+	local look = workspace.CurrentCamera.CFrame.LookVector
+	local dir = Vector3.new(look.X, 0, look.Z)
+	if dir.Magnitude < 0.01 then
+		return
+	end
+	dir = dir.Unit
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+	local hit = workspace:Raycast(root.Position, dir * d.distance, params)
+	local travel = hit and math.max(hit.Distance - 3, 0) or d.distance -- não atravessa parede
+	root.CFrame = root.CFrame + dir * travel
+end
+
 ----------------------------------------------------------------------
 -- SORU (o servidor move o personagem)
 ----------------------------------------------------------------------
@@ -1634,9 +1726,9 @@ local function doSoruTarget()
 end
 
 ----------------------------------------------------------------------
--- FLY / NOCLIP / SEM DANO DE QUEDA
+-- FLY / NOCLIP / PULO INFINITO
 ----------------------------------------------------------------------
-local flyState = { enabled = false, lv = nil, att = nil }
+local flyState = { enabled = false, lv = nil, att = nil, vel = Vector3.zero }
 local flyToggle
 
 local function stopFly()
@@ -1651,6 +1743,7 @@ local function stopFly()
 	local _, hum = getChar()
 	if hum then
 		hum.PlatformStand = false
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
 	end
 end
 
@@ -1669,11 +1762,13 @@ local function startFly()
 	lv.VectorVelocity = Vector3.zero
 	lv.Parent = root
 	flyState.att, flyState.lv = att, lv
+	flyState.vel = Vector3.zero
 	hum.PlatformStand = true
 	return true
 end
 
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(dt)
+	-- FLY suave ---------------------------------------------------------
 	if flyState.enabled then
 		local _, hum, root = getChar()
 		if not root or not flyState.lv or not flyState.lv.Parent then
@@ -1684,26 +1779,40 @@ RunService.Heartbeat:Connect(function()
 			end
 		else
 			local cam = workspace.CurrentCamera.CFrame
+			local look, right = cam.LookVector, cam.RightVector
+
+			-- Modo "Teclas": W/S/A/D andam na horizontal; subir/descer só com Espaço/Ctrl
+			if cfg.fly.vertical == "Teclas" then
+				look = Vector3.new(look.X, 0, look.Z)
+				look = look.Magnitude > 0.01 and look.Unit or Vector3.zero
+			end
+			right = Vector3.new(right.X, 0, right.Z)
+			right = right.Magnitude > 0.01 and right.Unit or Vector3.zero
+
 			local move = Vector3.zero
-			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.RightVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += look end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= look end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += right end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= right end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.yAxis end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.yAxis end
 			if move.Magnitude < 0.01 and hum.MoveDirection.Magnitude > 0.1 then
 				move = hum.MoveDirection -- celular / controle
 			end
-			flyState.lv.VectorVelocity = move.Magnitude > 0.01 and move.Unit * cfg.fly.speed or Vector3.zero
-		end
-	end
 
-	if cfg.noFall then
-		local _, _, root = getChar()
-		if root then
-			local v = root.AssemblyLinearVelocity
-			if v.Y < -70 then
-				root.AssemblyLinearVelocity = Vector3.new(v.X, -70, v.Z)
+			local goal = move.Magnitude > 0.01 and move.Unit * cfg.fly.speed or Vector3.zero
+
+			-- suavização: quanto maior "smooth", mais devagar acelera/freia
+			local rate = 25 - 0.22 * cfg.fly.smooth
+			local alpha = cfg.fly.smooth <= 0 and 1 or (1 - math.exp(-rate * dt))
+			flyState.vel = (flyState.vel or Vector3.zero):Lerp(goal, alpha)
+			flyState.lv.VectorVelocity = flyState.vel
+
+			-- o personagem vira suavemente para onde a câmera olha (sem inclinar)
+			local flat = Vector3.new(cam.LookVector.X, 0, cam.LookVector.Z)
+			if flat.Magnitude > 0.01 then
+				local pos = root.Position
+				root.CFrame = root.CFrame:Lerp(CFrame.lookAt(pos, pos + flat), 0.25)
 			end
 		end
 	end
@@ -1715,6 +1824,21 @@ RunService.Heartbeat:Connect(function()
 			local v = root.AssemblyLinearVelocity
 			root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
 		end
+	end
+end)
+
+-- PULO INFINITO ---------------------------------------------------------
+UserInputService.JumpRequest:Connect(function()
+	if not cfg.fly.infJump or not hasPerm("Fly") or flyState.enabled then
+		return
+	end
+	if os.clock() - cfg.fly.lastJump < 0.1 then
+		return
+	end
+	local _, hum = getChar()
+	if hum then
+		cfg.fly.lastJump = os.clock()
+		hum:ChangeState(Enum.HumanoidStateType.Jumping)
 	end
 end)
 
@@ -1960,6 +2084,8 @@ local function onKeyDown(k)
 		triggerGlideA()
 	elseif k == cfg.glideB.key then
 		triggerGlideB()
+	elseif k == cfg.dash.key then
+		doDash()
 	elseif k == Enum.KeyCode.G then
 		jumpBoost()
 	elseif k == cfg.fly.key and flyToggle then
@@ -2403,6 +2529,98 @@ player.CharacterAdded:Connect(function()
 end)
 
 ----------------------------------------------------------------------
+-- SAVE / LOAD (JSON)
+-- Usa writefile/readfile/isfile (só existem em executores). Se não
+-- existirem, o painel avisa e o resto continua funcionando.
+----------------------------------------------------------------------
+local HttpService = game:GetService("HttpService")
+local SAVE_FOLDER, SAVE_FILE = "SukyWare", "SukyWare/config.json"
+local fsOK = typeof(writefile) == "function" and typeof(readfile) == "function" and typeof(isfile) == "function"
+local autoLoadOn = false
+local autoToggle
+
+local function c3(c)
+	return { c.R, c.G, c.B }
+end
+
+local function readSave()
+	if not fsOK or not isfile(SAVE_FILE) then
+		return nil
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(readfile(SAVE_FILE))
+	end)
+	return (ok and type(data) == "table") and data or nil
+end
+
+local function writeSave(data)
+	if not fsOK then
+		notify("Seu executor não suporta writefile/readfile")
+		return false
+	end
+	local ok = pcall(function()
+		if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(SAVE_FOLDER) then
+			makefolder(SAVE_FOLDER)
+		end
+		writefile(SAVE_FILE, HttpService:JSONEncode(data))
+	end)
+	return ok
+end
+
+local function saveConfig()
+	local values = {}
+	for _, key in ipairs(saveOrder) do
+		local e = saveRegistry[key]
+		local v = e.w.Get()
+		if e.kind == "keybind" then
+			v = v.Name
+		end
+		values[key] = v
+	end
+	local data = {
+		version = 1,
+		autoLoad = autoLoadOn,
+		accent = c3(ACCENT),
+		trailColor = c3(cfg.soru.trailColor),
+		values = values,
+	}
+	notify(writeSave(data) and "Config salva" or "Falha ao salvar config")
+end
+
+local function loadConfig(manual)
+	local data = readSave()
+	if not data then
+		if manual then
+			notify("Nenhuma config salva")
+		end
+		return false
+	end
+	if data.accent then
+		setAccent(Color3.new(unpack(data.accent)))
+	end
+	if data.trailColor then
+		cfg.soru.trailColor = Color3.new(unpack(data.trailColor))
+	end
+	for _, key in ipairs(saveOrder) do
+		local e = saveRegistry[key]
+		local v = data.values and data.values[key]
+		if v ~= nil then
+			pcall(function()
+				if e.kind == "keybind" then
+					e.w.Set(Enum.KeyCode[v], true)
+				elseif e.kind == "dropdown" or e.kind == "input" then
+					e.w.Set(v, true)
+				else
+					e.w.Set(v) -- toggle/slider já disparam o callback
+				end
+			end)
+		end
+	end
+	notify("Config carregada")
+	return true
+end
+
+----------------------------------------------------------------------
 -- CONTEÚDO
 ----------------------------------------------------------------------
 
@@ -2609,6 +2827,17 @@ do
 		cfg.glideB.time = v
 	end)
 
+	UI.section(left, "Dash (CFrame)")
+	UI.toggle(left, "Dash ativado", false, function(v)
+		cfg.dash.enabled = v
+	end, nil, "Glide")
+	UI.slider(left, "Distância do dash", 5, 200, cfg.dash.distance, 1, function(v)
+		cfg.dash.distance = v
+	end)
+	UI.keybind(left, "Tecla do dash", cfg.dash.key, function(k)
+		cfg.dash.key = k
+	end)
+
 	UI.section(right, "Opções")
 	UI.keybind(right, "Tecla", cfg.glideB.key, function(k)
 		cfg.glideB.key = k
@@ -2634,23 +2863,31 @@ do
 			stopFly()
 		end
 	end, nil, "Fly")
-	UI.slider(left, "Velocidade de voo", 10, 300, cfg.fly.speed, 1, function(v)
+	UI.slider(left, "Velocidade de voo", 10, 200, cfg.fly.speed, 1, function(v)
 		cfg.fly.speed = v
 	end)
+	UI.slider(left, "Suavidade do voo", 0, 100, cfg.fly.smooth, 5, function(v)
+		cfg.fly.smooth = v
+	end)
+	UI.dropdown(left, "Controle vertical", { "Teclas", "Câmera" }, cfg.fly.vertical, function(v)
+		cfg.fly.vertical = v
+	end)
+
+	UI.section(left, "Tecla do Fly")
 	UI.keybind(left, "Tecla do Fly", cfg.fly.key, function(k)
 		cfg.fly.key = k
 	end)
 
-	UI.section(right, "Extras")
+	UI.section(right, "Extras / Mobilidade")
 	UI.toggle(right, "Noclip", false, function(v)
 		cfg.noclip = v
 	end, nil, "Fly")
-	UI.toggle(right, "Sem dano de queda", false, function(v)
-		cfg.noFall = v
+	UI.toggle(right, "Pulo infinito", false, function(v)
+		cfg.fly.infJump = v
 	end, nil, "Fly")
 end
 
--- MACRO ---------------------------------------------------------------
+-- MACRO (fora do Save/Load) ------------------------------------------
 do
 	local left, right = createTab("Macro")
 	local current = 1
@@ -2891,6 +3128,20 @@ do
 		end
 	end)
 
+	UI.section(left, "Perfil (Auto-Save)")
+	UI.button(left, "Save Config", saveConfig)
+	UI.button(left, "Load Config", function()
+		loadConfig(true)
+	end)
+	buildingTab = nil -- o próprio Auto-Load não entra no registro
+	autoToggle = UI.toggle(left, "Auto-Load Settings", false, function(v)
+		autoLoadOn = v
+		local data = readSave() or {}
+		data.autoLoad = v
+		writeSave(data)
+	end)
+	buildingTab = "Settings"
+
 	UI.section(right, "Geral")
 	UI.keybind(right, "Abrir/Fechar painel", toggleKey, function(k)
 		toggleKey = k
@@ -3109,4 +3360,13 @@ end)
 task.wait() -- espera o layout calcular as posições das abas
 selectTab("PVP", true) -- true = sem fade na primeira abertura
 showPanel() -- abre com a animação
+
+-- AUTO-LOAD: se existir um save com "Auto-Load Settings" ligado, restaura tudo
+local saved = readSave()
+if saved and saved.autoLoad then
+	autoLoadOn = true
+	autoToggle.Set(true, true)
+	loadConfig(false)
+end
+
 notify("Painel carregado")
