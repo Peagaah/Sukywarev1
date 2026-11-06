@@ -106,7 +106,7 @@ local currentTab
 
 -- Logo da bolinha: suba a imagem no Roblox e cole o ID aqui.
 -- Exemplo: "rbxassetid://1234567890"  (enquanto for "", a bolinha mostra o texto "SW")
-local LOGO_IMAGE = "rbxassetid://133287695758905"
+local LOGO_IMAGE = "rbxassetid://70015083144"
 
 local TEST_MODE = true -- Garante que está sempre como true
 
