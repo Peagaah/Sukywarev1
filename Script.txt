@@ -224,9 +224,7 @@ local gui = new("ScreenGui", {
 	DisplayOrder = 100,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, player:WaitForChild("PlayerGui"))
-
--- CanvasGroup: permite fazer fade em tudo de uma vez com GroupTransparency
--- CanvasGroup: permite fazer fade em tudo de uma vez com GroupTransparency
+-- Janela Principal (CanvasGroup)
 	local window = new("CanvasGroup", {
 		Size = UDim2.fromOffset(660, 410),
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -234,32 +232,26 @@ local gui = new("ScreenGui", {
 		BackgroundColor3 = THEME.window,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
+		GroupTransparency = 1,
 	}, gui)
 	corner(window, 12)
 	stroke(window, THEME.line, 1)
 	local uiScale = new("UIScale", { Scale = 1 }, window)
 
-	-- Imagem de fundo do anime perfeitamente posicionada
+	-- Imagem de Fundo do Anime
 	local animeBackground = new("ImageLabel", {
-		Size = window.Size,
-		Position = window.Position,
-		AnchorPoint = window.AnchorPoint,
+		Size = UDim2.new(1, 0, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
 		Image = "rbxassetid://130730941320154",
 		ScaleType = Enum.ScaleType.Crop,
 		ZIndex = 0,
+	}, window)
+	corner(animeBackground, 12)
+	}, window)
+	corner(animeBackground, 12)
 	}, gui)
 	corner(animeBackground, 12)
-	-- IMAGEM DE FUNDO DO ANIME (Colada direto na linha certa)
-	local animeBackground = new("ImageLabel", {
-		Size = window.Size,
-		Position = window.Position,
-		AnchorPoint = window.AnchorPoint,
-		BackgroundTransparency = 1,
-		Image = "rbxassetid://130730941320154",
-		ScaleType = Enum.ScaleType.Crop,
-		ZIndex = 0,
 	}, gui)
 	corner(animeBackground, 12)
 }, window)
