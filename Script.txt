@@ -234,6 +234,23 @@ local window = new("CanvasGroup", {
 	BorderSizePixel = 0,
 	GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
 }, gui)
+-- Adiciona a imagem de fundo personalizada do anime na janela principal
+local animeBackground = new("ImageLabel", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    Image = "rbxassetid://130730941320154",
+    ScaleType = Enum.ScaleType.Crop,
+    ZIndex = 0, -- Fica no fundo de tudo
+}, window)
+corner(animeBackground, 12) -- Arredonda os cantos igual à janela
+-- Faz a opacidade da imagem acompanhar o sistema de transparência do painel (Settings)
+task.spawn(function()
+    while task.wait(0.1) do
+        pcall(function()
+            animeBackground.ImageTransparency = window.BackgroundTransparency
+        end)
+    end
+end)
 corner(window, 12)
 stroke(window, THEME.line, 1)
 local uiScale = new("UIScale", { Scale = 1 }, window)
