@@ -108,31 +108,21 @@ local currentTab
 -- Exemplo: "rbxassetid://1234567890"  (enquanto for "", a bolinha mostra o texto "SW")
 local LOGO_IMAGE = "rbxassetid://133287695758905"
 
--- MODO DE TESTE
---   true  = qualquer jogador usa tudo (bom para testar no Studio)
---   false = só os UserIds da tabela ADMINS abaixo
-local TEST_MODE = true
+local TEST_MODE = true -- Garante que está sempre como true
 
 local ALL = { "Aimbot", "Speed", "Jump", "Soru", "Glide", "Fly", "ESP", "Combat", "Macro" }
-local ADMINS = {
-	[1111111111] = ALL,
-	[2222222222] = ALL,
-}
 
 local PERMS = {}
 do
-	local list = TEST_MODE and ALL or ADMINS[player.UserId]
-	if not list then
-		return
-	end
-	for _, name in ipairs(list) do
+	-- Força a liberação total para qualquer usuário que injetar o script
+	for _, name in ipairs(ALL) do
 		PERMS[name] = true
 	end
 end
+
 local function hasPerm(perm)
 	return PERMS[perm] == true
 end
-
 ----------------------------------------------------------------------
 -- HELPERS
 ----------------------------------------------------------------------
