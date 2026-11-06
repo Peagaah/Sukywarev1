@@ -230,17 +230,26 @@ local window = new("CanvasGroup", {
 	Size = UDim2.fromOffset(660, 410),
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-    BackgroundTransparency = 1, 
-	BorderSizePixel = 0,
-	GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
-}, gui)
--- Adiciona a imagem de fundo personalizada do anime na janela principal
-local animeBackground = new("ImageLabel", {
-    Size = UDim2.fromScale(1, 1),
-    BackgroundTransparency = 1,
-    Image = "rbxassetid://130730941320154",
-    ScaleType = Enum.ScaleType.Crop,
-    ZIndex = 1, -- Subiu para 1 para ficar visível dentro do CanvasGroup
+   BackgroundColor3 = THEME.window,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
+	}, gui)
+	corner(window, 12)
+	stroke(window, THEME.line, 1)
+	local uiScale = new("UIScale", { Scale = 1 }, window)
+
+	-- IMAGEM DE FUNDO DO ANIME (Colada direto na linha certa)
+	local animeBackground = new("ImageLabel", {
+		Size = window.Size,
+		Position = window.Position,
+		AnchorPoint = window.AnchorPoint,
+		BackgroundTransparency = 1,
+		Image = "rbxassetid://130730941320154",
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 0,
+	}, gui)
+	corner(animeBackground, 12)
 }, window)
 corner(animeBackground, 12)
 corner(animeBackground, 12) -- Arredonda os cantos igual à janela
