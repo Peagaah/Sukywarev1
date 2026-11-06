@@ -230,7 +230,7 @@ local window = new("CanvasGroup", {
 	Size = UDim2.fromOffset(660, 410),
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	BackgroundColor3 = THEME.window,
+    BackgroundTransparency = 1, 
 	BorderSizePixel = 0,
 	GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
 }, gui)
@@ -240,8 +240,9 @@ local animeBackground = new("ImageLabel", {
     BackgroundTransparency = 1,
     Image = "rbxassetid://130730941320154",
     ScaleType = Enum.ScaleType.Crop,
-    ZIndex = 0, -- Fica no fundo de tudo
+    ZIndex = 1, -- Subiu para 1 para ficar visível dentro do CanvasGroup
 }, window)
+corner(animeBackground, 12)
 corner(animeBackground, 12) -- Arredonda os cantos igual à janela
 -- Faz a opacidade da imagem acompanhar o sistema de transparência do painel (Settings)
 task.spawn(function()
