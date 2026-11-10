@@ -106,23 +106,33 @@ local currentTab
 
 -- Logo da bolinha: suba a imagem no Roblox e cole o ID aqui.
 -- Exemplo: "rbxassetid://1234567890"  (enquanto for "", a bolinha mostra o texto "SW")
-local LOGO_IMAGE = "rbxassetid://70015083144"
+local LOGO_IMAGE = "rbxassetid://133287695758905"
 
-local TEST_MODE = true -- Garante que está sempre como true
+-- MODO DE TESTE
+--   true  = qualquer jogador usa tudo (bom para testar no Studio)
+--   false = só os UserIds da tabela ADMINS abaixo
+local TEST_MODE = true
 
 local ALL = { "Aimbot", "Speed", "Jump", "Soru", "Glide", "Fly", "ESP", "Combat", "Macro" }
+local ADMINS = {
+	[1111111111] = ALL,
+	[2222222222] = ALL,
+}
 
 local PERMS = {}
 do
-	-- Força a liberação total para qualquer usuário que injetar o script
-	for _, name in ipairs(ALL) do
+	local list = TEST_MODE and ALL or ADMINS[player.UserId]
+	if not list then
+		return
+	end
+	for _, name in ipairs(list) do
 		PERMS[name] = true
 	end
 end
-
 local function hasPerm(perm)
 	return PERMS[perm] == true
 end
+
 ----------------------------------------------------------------------
 -- HELPERS
 ----------------------------------------------------------------------
@@ -224,47 +234,16 @@ local gui = new("ScreenGui", {
 	DisplayOrder = 100,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, player:WaitForChild("PlayerGui"))
--- Janela Principal (CanvasGroup)
-	local window = new("CanvasGroup", {
-		Size = UDim2.fromOffset(660, 410),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		BackgroundColor3 = THEME.window,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		GroupTransparency = 1,
-	}, gui)
-	corner(window, 12)
-	stroke(window, THEME.line, 1)
-	local uiScale = new("UIScale", { Scale = 1 }, window)
 
-	-- Imagem de Fundo do Anime
-	local animeBackground = new("ImageLabel", {
-		Size = UDim2.new(1, 0, 1, 0),
-		Position = UDim2.new(0, 0, 0, 0),
-		BackgroundTransparency = 1,
-		Image = "rbxassetid://130730941320154",
-		ScaleType = Enum.ScaleType.Crop,
-		ZIndex = 0,
-	}, window)
-	corner(animeBackground, 12)
-	}, window)
-	corner(animeBackground, 12)
-	}, gui)
-	corner(animeBackground, 12)
-	}, gui)
-	corner(animeBackground, 12)
-}, window)
-corner(animeBackground, 12)
-corner(animeBackground, 12) -- Arredonda os cantos igual à janela
--- Faz a opacidade da imagem acompanhar o sistema de transparência do painel (Settings)
-task.spawn(function()
-    while task.wait(0.1) do
-        pcall(function()
-            animeBackground.ImageTransparency = window.BackgroundTransparency
-        end)
-    end
-end)
+-- CanvasGroup: permite fazer fade em tudo de uma vez com GroupTransparency
+local window = new("CanvasGroup", {
+	Size = UDim2.fromOffset(660, 410),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	BackgroundColor3 = THEME.window,
+	BorderSizePixel = 0,
+	GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
+}, gui)
 corner(window, 12)
 stroke(window, THEME.line, 1)
 local uiScale = new("UIScale", { Scale = 1 }, window)
@@ -1218,6 +1197,8 @@ local cfg = {
 	teamCheck = true,
 	priority = "Mais próximo",
 	fovMode = "V1", -- V1 = círculo no mouse, V2 = círculo no centro da tela
+	aimActivation = "Automático (ESP)", -- "Automático (ESP)" ou "Segurar botão direito"
+	aimTargetMode = "Players", -- "Players", "NPCs" ou "Both" -- quem o Aimbot pode travar
 	lockedTarget = nil,
 	speedOn = false,
 	walkSpeed = 80,
@@ -1249,7 +1230,13 @@ local cfg = {
 	},
 	glideA = { enabled = false, key = Enum.KeyCode.H, speed = 350, time = 20, keepHeight = true, busy = false },
 	glideB = { enabled = false, key = Enum.KeyCode.J, speed = 300, time = 15, keepHeight = true, busy = false },
-	dash = { enabled = false, key = Enum.KeyCode.F2, distance = 30 }, -- Dash (CFrame) da aba Glitch
+	dash = {
+		enabled = false,
+		key = Enum.KeyCode.F2,
+		distance = 30,
+		impulseForce = 90, -- Dash (CFrame) da aba Glitch
+		impulseTime = 0.2, -- velocidade/duração do impulso físico (duplo toque / botão mobile)
+	},
 	fly = {
 		key = Enum.KeyCode.F,
 		speed = 60,
@@ -1388,15 +1375,52 @@ local function pickTarget(list, needVisible)
 	return best
 end
 
+-- ALVO COMPARTILHADO: o mesmo jogador que o ESP destaca é quem o Aimbot
+-- trava e quem as habilidades do SEU jogo recebem pelo hook abaixo.
+-- Assim ESP + Aimbot + Silent Aim sempre apontam para o mesmo inimigo.
+local currentLockPart, currentLockPlayer
+
+local function updateLock()
+	local locked = cfg.lockedTarget
+	if locked and locked.Parent then
+		local char = locked.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		local part = char and aimPartOf(char)
+		if hum and hum.Health > 0 and part then
+			currentLockPart, currentLockPlayer = part, locked
+			return
+		end
+	end
+
+	-- Players sempre tem prioridade sobre NPC: só cai pra NPC se o modo
+	-- permitir ("NPCs" ou "Both") e nenhum player válido foi encontrado.
+	local mode = cfg.aimTargetMode
+	local best
+
+	if mode ~= "NPCs" then
+		best = pickTarget(collectTargets(true, false), true)
+	end
+	if not best and mode ~= "Players" then
+		best = pickTarget(collectTargets(false, true), true)
+	end
+
+	if best then
+		currentLockPart = best.part
+		currentLockPlayer = Players:GetPlayerFromCharacter(best.char)
+	else
+		currentLockPart, currentLockPlayer = nil, nil
+	end
+end
+
 -- O script de arma/skill do SEU jogo chama isto para saber onde mirar:
 --   local part = shared.SukyWare and shared.SukyWare.GetSilentAimPart()
 --   if part then  alvo = part.Position  end
+-- Ele devolve exatamente o mesmo alvo que o ESP achou e o Aimbot travou.
 function hooks.GetSilentAimPart()
 	if not hasPerm("Aimbot") or not (cfg.silentPlayers or cfg.silentNpc) then
 		return nil
 	end
-	local best = pickTarget(collectTargets(cfg.silentPlayers, cfg.silentNpc), false)
-	return best and best.part or nil
+	return currentLockPart
 end
 
 local fovCircle = new("Frame", {
@@ -1417,27 +1441,18 @@ RunService.RenderStepped:Connect(function()
 		fovCircle.Size = UDim2.fromOffset(cfg.fovSize, cfg.fovSize)
 	end
 
-	if not cfg.aimbot or not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+	updateLock() -- recalcula o alvo que o ESP acabou de achar, todo frame
+
+	if not cfg.aimbot then
 		return
 	end
-
-	local target
-	local locked = cfg.lockedTarget
-	if locked and locked.Parent then
-		local char = locked.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		local part = char and aimPartOf(char)
-		if hum and hum.Health > 0 and part then
-			target = part
-		end
+	local holding = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+	if cfg.aimActivation ~= "Automático (ESP)" and not holding then
+		return
 	end
-	if not target then
-		local best = pickTarget(collectTargets(true, false), true)
-		target = best and best.part
-	end
-	if target then
+	if currentLockPart then
 		local camera = workspace.CurrentCamera
-		local goal = CFrame.lookAt(camera.CFrame.Position, target.Position)
+		local goal = CFrame.lookAt(camera.CFrame.Position, currentLockPart.Position)
 		camera.CFrame = camera.CFrame:Lerp(goal, cfg.smooth)
 	end
 end)
@@ -1536,6 +1551,45 @@ local function doDash()
 	local hit = workspace:Raycast(root.Position, dir * d.distance, params)
 	local travel = hit and math.max(hit.Distance - 3, 0) or d.distance -- não atravessa parede
 	root.CFrame = root.CFrame + dir * travel
+end
+
+-- IMPULSO (LinearVelocity, sem teleporte) -------------------------------
+-- Empurrão físico fluido para a frente: duplo toque na tecla do dash no PC,
+-- ou botão correspondente no HUD mobile. Usa Attachment+LinearVelocity por
+-- um tempo curto (como o Fly) em vez de mover o CFrame instantaneamente.
+local function doDashImpulse()
+	local d = cfg.dash
+	if not d.enabled or not hasPerm("Glide") then
+		return
+	end
+	local _char, _, root = getChar()
+	if not root then
+		return
+	end
+	local look = workspace.CurrentCamera.CFrame.LookVector
+	local dir = Vector3.new(look.X, 0, look.Z)
+	if dir.Magnitude < 0.01 then
+		return
+	end
+	dir = dir.Unit
+
+	local att = Instance.new("Attachment")
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0 = att
+	lv.MaxForce = math.huge
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.VectorVelocity = dir * d.impulseForce + Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+	lv.Parent = root
+
+	task.delay(d.impulseTime, function()
+		if lv then
+			lv:Destroy()
+		end
+		if att then
+			att:Destroy()
+		end
+	end)
 end
 
 ----------------------------------------------------------------------
@@ -1751,6 +1805,7 @@ end
 ----------------------------------------------------------------------
 local flyState = { enabled = false, lv = nil, att = nil, vel = Vector3.zero }
 local flyToggle
+local aimToggleWidget, speedToggleWidget, macroToggleWidget -- preenchidos ao criar as abas; usados pelo HUD mobile
 
 local function stopFly()
 	if flyState.lv then
@@ -1886,7 +1941,7 @@ local esp = {
 	names = false,
 	dist = false,
 	health = false,
-	maxDist = 1000, -- em studs (o slider vai até 20000)
+	maxDist = 4000, -- em studs (o slider vai até 20000) -- aumentado: 1000 cortava jogadores mais longe em mapas grandes
 	style = "Contorno", -- "Contorno", "Preenchido" ou "Nenhum"
 	ignoreTeam = true,
 	box = false, -- Box ESP (contorno do corpo)
@@ -1996,11 +2051,13 @@ RunService.Heartbeat:Connect(function()
 				if o then
 					local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
 					local inRange = dist <= esp.maxDist
-					o.hl.Enabled = inRange and esp.style ~= "Nenhum"
-					o.hl.FillColor = ACCENT
-					o.hl.FillTransparency = esp.style == "Preenchido" and 0.5 or 1
-					o.sel.Visible = inRange and esp.box
-					o.sel.Color3 = ACCENT
+					local isLocked = cfg.aimbot and p == currentLockPlayer
+					o.hl.Enabled = inRange and (esp.style ~= "Nenhum" or isLocked)
+					o.hl.FillColor = isLocked and Color3.fromRGB(255, 60, 60) or ACCENT
+					o.hl.FillTransparency = (esp.style == "Preenchido" or isLocked) and 0.5 or 1
+					o.sel.Visible = inRange and (esp.box or isLocked)
+					o.sel.Color3 = isLocked and Color3.fromRGB(255, 60, 60) or ACCENT
+					o.sel.LineThickness = isLocked and 0.08 or 0.04
 					o.bb.Enabled = inRange and (esp.names or esp.dist or esp.health)
 					o.label.TextSize = esp.textSize
 					local lines = {}
@@ -2012,6 +2069,9 @@ RunService.Heartbeat:Connect(function()
 					end
 					if esp.health then
 						table.insert(lines, math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. " HP")
+					end
+					if isLocked then
+						table.insert(lines, 1, "ð¯ ALVO")
 					end
 					o.label.Text = table.concat(lines, "\n")
 				end
@@ -2095,6 +2155,7 @@ end)
 -- TECLAS
 ----------------------------------------------------------------------
 local recorder = { on = false, events = {}, downs = {}, target = 1 }
+local lastDashTap = 0
 
 local function onKeyDown(k)
 	if k == cfg.soru.key then
@@ -2106,7 +2167,13 @@ local function onKeyDown(k)
 	elseif k == cfg.glideB.key then
 		triggerGlideB()
 	elseif k == cfg.dash.key then
-		doDash()
+		local now = os.clock()
+		if now - lastDashTap < 0.35 then
+			doDashImpulse() -- duplo toque: empurrão físico
+		else
+			doDash() -- toque simples: dash normal (CFrame)
+		end
+		lastDashTap = now
 	elseif k == Enum.KeyCode.G then
 		jumpBoost()
 	elseif k == cfg.fly.key and flyToggle then
@@ -2650,7 +2717,7 @@ do
 	local left, right = createTab("PVP")
 
 	UI.section(left, "Aimbot")
-	UI.toggle(left, "Aimbot (botão direito)", false, function(v)
+	aimToggleWidget = UI.toggle(left, "Aimbot (botão direito)", false, function(v)
 		cfg.aimbot = v
 	end, "RButton", "Aimbot")
 	UI.playerList(left, function(selectedPlayer)
@@ -2676,6 +2743,12 @@ do
 	UI.dropdown(left, "Modo de FOV", { "V1", "V2" }, cfg.fovMode, function(v)
 		cfg.fovMode = v
 	end)
+	UI.dropdown(left, "Ativação do Aimbot", { "Automático (ESP)", "Segurar botão direito" }, cfg.aimActivation, function(v)
+		cfg.aimActivation = v
+	end)
+	UI.dropdown(left, "Alvo do Aimbot", { "Players", "NPCs", "Both" }, cfg.aimTargetMode, function(v)
+		cfg.aimTargetMode = v
+	end)
 	UI.slider(left, "Força da mira (%)", 5, 100, cfg.smooth * 100, 1, function(v)
 		cfg.smooth = v / 100
 	end)
@@ -2690,7 +2763,7 @@ do
 	end)
 
 	UI.section(right, "Velocidade")
-	UI.toggle(right, "Speed Hack", false, function(v)
+	speedToggleWidget = UI.toggle(right, "Speed Hack", false, function(v)
 		cfg.speedOn = v
 		applySpeed()
 	end, nil, "Speed")
@@ -2858,6 +2931,12 @@ do
 	UI.keybind(left, "Tecla do dash", cfg.dash.key, function(k)
 		cfg.dash.key = k
 	end)
+	UI.slider(left, "Força do impulso (duplo toque)", 30, 200, cfg.dash.impulseForce, 5, function(v)
+		cfg.dash.impulseForce = v
+	end)
+	UI.slider(left, "Duração do impulso (s)", 0.1, 0.6, cfg.dash.impulseTime, 0.05, function(v)
+		cfg.dash.impulseTime = v
+	end)
 
 	UI.section(right, "Opções")
 	UI.keybind(right, "Tecla", cfg.glideB.key, function(k)
@@ -2954,6 +3033,7 @@ do
 			stopMacro(cm())
 		end
 	end, nil, "Macro")
+	macroToggleWidget = wEnabled
 	wKey = UI.keybind(left, "Tecla de ativação", macros[1].key, function(k)
 		cm().key = k
 	end)
@@ -3177,6 +3257,49 @@ do
 		notify("Aparência resetada")
 	end)
 
+	UI.section(right, "Performance")
+	UI.button(right, "FPS Boost / Potato Mode", function()
+		local Lighting = game:GetService("Lighting")
+		local terrain = workspace:FindFirstChildOfClass("Terrain")
+
+		-- Céu, atmosfera e efeitos de pós-processamento
+		for _, inst in ipairs(Lighting:GetChildren()) do
+			if inst:IsA("Sky") or inst:IsA("Atmosphere") or inst:IsA("PostEffect") then
+				inst:Destroy()
+			end
+		end
+		Lighting.FogEnd = 1e9
+		Lighting.GlobalShadows = false
+		Lighting.Brightness = 1
+
+		-- Decoração do terreno (grama/plantas) e texturas visuais
+		if terrain then
+			-- Desligar a decoração do terrain (grama etc.) exige uma propriedade
+			-- que o Lua padrão não expõe. Isso só funciona rodando via executor;
+			-- em Studio/jogo publicado o pcall simplesmente falha e é ignorado.
+			local ok = pcall(function()
+				sethiddenproperty(terrain, "Decoration", false)
+			end)
+			if not ok then
+				terrain.Decoration = false -- fallback: essa propriedade É pública, então isso já ajuda bastante sozinho
+			end
+		end
+
+		-- Qualidade de renderização (textura/draw distance)
+		pcall(function()
+			settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+		end)
+
+		-- Remove partículas/efeitos visuais pesados do mapa (não mexe em nada seu/outros jogadores)
+		for _, inst in ipairs(workspace:GetDescendants()) do
+			if inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Smoke") or inst:IsA("Fire") or inst:IsA("Sparkles") then
+				inst.Enabled = false
+			end
+		end
+
+		notify("FPS Boost aplicado")
+	end)
+
 	UI.section(right, "Animações")
 	local wAnim = UI.toggle(right, "Animar abrir/fechar", anim.enabled, function(v)
 		anim.enabled = v
@@ -3360,6 +3483,97 @@ do
 				showPanel()
 			end
 		end
+	end)
+end
+
+----------------------------------------------------------------------
+-- HUD MOBILE (atalhos rápidos por toque)
+----------------------------------------------------------------------
+-- Detecta celular (touch sem teclado físico) e cria um menu flutuante
+-- com botões redondos que espelham os toggles do painel principal --
+-- tocar no botão aqui chama exatamente o mesmo Set() do toggle normal,
+-- então o estado fica sempre sincronizado dos dois lados.
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+if isMobile then
+	local hud = new("Frame", {
+		Name = "SukyHUD",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 12),
+		Size = UDim2.new(0, 320, 0, 56),
+		BackgroundTransparency = 1,
+		ZIndex = 140,
+	}, gui)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 8),
+	}, hud)
+
+	-- botão com toggle embutido (liga/desliga um widget já existente do painel)
+	local function hudToggle(label, widget)
+		local btn = new("TextButton", {
+			Size = UDim2.fromOffset(50, 50),
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = 0.25,
+			Text = label,
+			TextColor3 = Color3.new(1, 1, 1),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			AutoButtonColor = false,
+			ZIndex = 141,
+		}, hud)
+		corner(btn, 25)
+		bindAccent(stroke(btn, Color3.new(1, 1, 1), 1.5), "Color")
+
+		local function refresh()
+			local on = widget ~= nil and widget.Get()
+			btn.BackgroundColor3 = on and ACCENT or Color3.new(0, 0, 0)
+			btn.BackgroundTransparency = on and 0.1 or 0.25
+		end
+
+		btn.MouseButton1Click:Connect(function()
+			if widget then
+				widget.Set(not widget.Get())
+				refresh()
+			end
+		end)
+		refresh()
+		return refresh
+	end
+
+	-- botão de ação instantânea (não liga/desliga nada, só dispara uma função)
+	local function hudAction(label, callback)
+		local btn = new("TextButton", {
+			Size = UDim2.fromOffset(50, 50),
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = 0.25,
+			Text = label,
+			TextColor3 = Color3.new(1, 1, 1),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			AutoButtonColor = false,
+			ZIndex = 141,
+		}, hud)
+		corner(btn, 25)
+		bindAccent(stroke(btn, Color3.new(1, 1, 1), 1.5), "Color")
+		btn.MouseButton1Click:Connect(callback)
+	end
+
+	local refreshAim = hudToggle("Aim", aimToggleWidget)
+	local refreshSpeed = hudToggle("Fast", speedToggleWidget)
+	local refreshMacro = hudToggle("Macro", macroToggleWidget)
+	hudAction("Dash", doDashImpulse) -- toque = sempre o impulso (equivalente ao duplo toque do PC)
+	hudAction("Reset", function()
+		-- "Reset" do HUD = desliga os atalhos rápidos de uma vez (não mexe em posição/WalkSpeed)
+		if aimToggleWidget and aimToggleWidget.Get() then aimToggleWidget.Set(false) end
+		if speedToggleWidget and speedToggleWidget.Get() then speedToggleWidget.Set(false) end
+		if macroToggleWidget and macroToggleWidget.Get() then macroToggleWidget.Set(false) end
+		refreshAim()
+		refreshSpeed()
+		refreshMacro()
+		notify("Atalhos do HUD resetados")
 	end)
 end
 
