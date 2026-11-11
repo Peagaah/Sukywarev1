@@ -1805,7 +1805,6 @@ end
 ----------------------------------------------------------------------
 local flyState = { enabled = false, lv = nil, att = nil, vel = Vector3.zero }
 local flyToggle
-local aimToggleWidget, speedToggleWidget, macroToggleWidget -- preenchidos ao criar as abas; usados pelo HUD mobile
 
 local function stopFly()
 	if flyState.lv then
@@ -2717,7 +2716,7 @@ do
 	local left, right = createTab("PVP")
 
 	UI.section(left, "Aimbot")
-	aimToggleWidget = UI.toggle(left, "Aimbot (botão direito)", false, function(v)
+	UI.toggle(left, "Aimbot (botão direito)", false, function(v)
 		cfg.aimbot = v
 	end, "RButton", "Aimbot")
 	UI.playerList(left, function(selectedPlayer)
@@ -2763,7 +2762,7 @@ do
 	end)
 
 	UI.section(right, "Velocidade")
-	speedToggleWidget = UI.toggle(right, "Speed Hack", false, function(v)
+	UI.toggle(right, "Speed Hack", false, function(v)
 		cfg.speedOn = v
 		applySpeed()
 	end, nil, "Speed")
@@ -3033,7 +3032,6 @@ do
 			stopMacro(cm())
 		end
 	end, nil, "Macro")
-	macroToggleWidget = wEnabled
 	wKey = UI.keybind(left, "Tecla de ativação", macros[1].key, function(k)
 		cm().key = k
 	end)
@@ -3487,95 +3485,92 @@ do
 end
 
 ----------------------------------------------------------------------
--- HUD MOBILE (atalhos rápidos por toque)
+-- BOLINHAS DE AÇÃO RÁPIDA (Dash / Super Pulo) -- PC e mobile
 ----------------------------------------------------------------------
--- Detecta celular (touch sem teclado físico) e cria um menu flutuante
--- com botões redondos que espelham os toggles do painel principal --
--- tocar no botão aqui chama exatamente o mesmo Set() do toggle normal,
--- então o estado fica sempre sincronizado dos dois lados.
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+-- Duas bolinhas soltas, no mesmo estilo visual da bolinha principal
+-- (preto + contorno), cada uma com o nome da ação e a versão do
+-- SukyWare. Clicar (PC) ou tocar (mobile) executa a ação na hora, sem
+-- precisar abrir o painel -- funcionam igual nas duas plataformas
+-- porque InputBegan/InputEnded tratam mouse e touch do mesmo jeito.
+-- Podem ser arrastadas pra qualquer lugar da tela, igual a bolinha "SW".
+local QUICK_SIZE = 54
+local SW_VERSION = "v1.0"
 
-if isMobile then
-	local hud = new("Frame", {
-		Name = "SukyHUD",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 12),
-		Size = UDim2.new(0, 320, 0, 56),
-		BackgroundTransparency = 1,
-		ZIndex = 140,
+local function makeQuickBubble(name, label, yOffset, callback)
+	local b = new("TextButton", {
+		Name = name,
+		Size = UDim2.fromOffset(QUICK_SIZE, QUICK_SIZE),
+		Position = UDim2.new(1, -90, 0.5, yOffset),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		AutoButtonColor = false,
+		Text = "",
+		ZIndex = 150,
 	}, gui)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, 8),
-	}, hud)
+	corner(b, QUICK_SIZE / 2)
+	bindAccent(stroke(b, Color3.new(1, 1, 1), 2), "Color")
 
-	-- botão com toggle embutido (liga/desliga um widget já existente do painel)
-	local function hudToggle(label, widget)
-		local btn = new("TextButton", {
-			Size = UDim2.fromOffset(50, 50),
-			BackgroundColor3 = Color3.new(0, 0, 0),
-			BackgroundTransparency = 0.25,
-			Text = label,
-			TextColor3 = Color3.new(1, 1, 1),
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			AutoButtonColor = false,
-			ZIndex = 141,
-		}, hud)
-		corner(btn, 25)
-		bindAccent(stroke(btn, Color3.new(1, 1, 1), 1.5), "Color")
+	new("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 18),
+		Position = UDim2.new(0, 0, 0, 9),
+		BackgroundTransparency = 1,
+		Text = label,
+		TextColor3 = Color3.new(1, 1, 1),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 13,
+		ZIndex = 151,
+	}, b)
+	new("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 12),
+		Position = UDim2.new(0, 0, 1, -17),
+		BackgroundTransparency = 1,
+		Text = "SukyWare " .. SW_VERSION,
+		TextColor3 = Color3.fromRGB(190, 190, 190),
+		Font = Enum.Font.Gotham,
+		TextSize = 7,
+		ZIndex = 151,
+	}, b)
 
-		local function refresh()
-			local on = widget ~= nil and widget.Get()
-			btn.BackgroundColor3 = on and ACCENT or Color3.new(0, 0, 0)
-			btn.BackgroundTransparency = on and 0.1 or 0.25
+	-- arrastar igual a bolinha principal; toque/clique simples (sem arrastar) = executa a ação
+	local dragging, moved = false, false
+	local dragStart, startAbs
+	b.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging, moved = true, false
+			dragStart = input.Position
+			startAbs = b.AbsolutePosition
 		end
-
-		btn.MouseButton1Click:Connect(function()
-			if widget then
-				widget.Set(not widget.Get())
-				refresh()
-			end
-		end)
-		refresh()
-		return refresh
-	end
-
-	-- botão de ação instantânea (não liga/desliga nada, só dispara uma função)
-	local function hudAction(label, callback)
-		local btn = new("TextButton", {
-			Size = UDim2.fromOffset(50, 50),
-			BackgroundColor3 = Color3.new(0, 0, 0),
-			BackgroundTransparency = 0.25,
-			Text = label,
-			TextColor3 = Color3.new(1, 1, 1),
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			AutoButtonColor = false,
-			ZIndex = 141,
-		}, hud)
-		corner(btn, 25)
-		bindAccent(stroke(btn, Color3.new(1, 1, 1), 1.5), "Color")
-		btn.MouseButton1Click:Connect(callback)
-	end
-
-	local refreshAim = hudToggle("Aim", aimToggleWidget)
-	local refreshSpeed = hudToggle("Fast", speedToggleWidget)
-	local refreshMacro = hudToggle("Macro", macroToggleWidget)
-	hudAction("Dash", doDashImpulse) -- toque = sempre o impulso (equivalente ao duplo toque do PC)
-	hudAction("Reset", function()
-		-- "Reset" do HUD = desliga os atalhos rápidos de uma vez (não mexe em posição/WalkSpeed)
-		if aimToggleWidget and aimToggleWidget.Get() then aimToggleWidget.Set(false) end
-		if speedToggleWidget and speedToggleWidget.Get() then speedToggleWidget.Set(false) end
-		if macroToggleWidget and macroToggleWidget.Get() then macroToggleWidget.Set(false) end
-		refreshAim()
-		refreshSpeed()
-		refreshMacro()
-		notify("Atalhos do HUD resetados")
 	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			if d.Magnitude > 6 then
+				moved = true
+			end
+			if moved then
+				local screen = gui.AbsoluteSize
+				local x = math.clamp(startAbs.X + d.X, 0, screen.X - QUICK_SIZE)
+				local y = math.clamp(startAbs.Y + d.Y, 0, screen.Y - QUICK_SIZE)
+				b.Position = UDim2.fromOffset(x, y)
+			end
+		end
+	end)
+	b.InputEnded:Connect(function(input)
+		if dragging and isPointer(input) then
+			dragging = false
+			if not moved then
+				callback()
+			end
+		end
+	end)
+
+	return b
 end
+
+-- "Dash" = o mesmo dash pra frente (CFrame) que já existe na aba Glitch
+makeQuickBubble("SukyDashBubble", "Dash", -(QUICK_SIZE + 16), doDash)
+-- "Super Pulo" = o mesmo impulso pra cima (jumpBoost) que já existe
+makeQuickBubble("SukySuperPuloBubble", "Pulo", 10, jumpBoost)
 
 closeButton.MouseButton1Click:Connect(hidePanel)
 
